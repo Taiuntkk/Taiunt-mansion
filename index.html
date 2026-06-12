@@ -2754,14 +2754,29 @@ function RefundLine({ label, value }) {
 // ─── Tenants ────────────────────────────────────────────────────────────
 function AdminTenants() {
   const [tab, setTab] = React.useState('list');
+  const [pendingCount, setPendingCount] = React.useState(0);
+
+  const loadPending = React.useCallback(async () => {
+    if (!window.sb) return;
+    const { count } = await window.sb.from('profiles')
+      .select('*', { count: 'exact', head: true })
+      .eq('role', 'tenant').is('room_id', null);
+    setPendingCount(count || 0);
+  }, []);
+
+  React.useEffect(() => { loadPending(); }, []);
+
   return (
     <div className="tu-page">
       <PageHeader title="ผู้เข้าพัก" subtitle="Tenants — ทะเบียนผู้เข้าพักและการลงทะเบียนใหม่" />
       <Tabs value={tab} onChange={setTab} options={[
         { value: 'list', label: 'ทะเบียนผู้เข้าพัก', count: TENANTS.length },
-        { value: 'register', label: 'ลงทะเบียนใหม่' },
+        { value: 'pending', label: 'รออนุมัติ', count: pendingCount || undefined },
+        { value: 'register', label: 'ลงทะเบียนใหม่ (Admin)' },
       ]} />
-      {tab === 'list' ? <TenantList /> : <TenantRegister onDone={() => setTab('list')} />}
+      {tab === 'list' && <TenantList />}
+      {tab === 'pending' && <AdminPendingTenants onApproved={loadPending} />}
+      {tab === 'register' && <TenantRegister onDone={() => setTab('list')} />}
     </div>
   );
 }
@@ -2985,6 +3000,193 @@ function TenantRegister({ onDone }) {
         </div>
       </div>
     </Card>
+  );
+}
+
+// ─── Pending tenant approvals ────────────────────────────────────────────
+function AdminPendingTenants({ onApproved }) {
+  const [pending, setPending] = React.useState(null);
+  const [selected, setSelected] = React.useState(null);
+  const [rejecting, setRejecting] = React.useState(null);
+
+  const load = React.useCallback(async () => {
+    if (!window.sb) { setPending([]); return; }
+    const { data } = await window.sb.from('profiles')
+      .select('*').eq('role', 'tenant').is('room_id', null).order('created_at');
+    setPending(data || []);
+  }, []);
+
+  React.useEffect(() => { load(); }, []);
+
+  const handleReject = async (profile) => {
+    setRejecting(profile.id);
+    await window.sb.from('profiles').delete().eq('id', profile.id);
+    setPending(p => p.filter(x => x.id !== profile.id));
+    if (onApproved) onApproved();
+    setRejecting(null);
+  };
+
+  if (pending === null) return (
+    <Card padding={32} style={{ textAlign: 'center' }}>
+      <div className="tu-muted">กำลังโหลด...</div>
+    </Card>
+  );
+
+  if (!window.sb) return (
+    <Card padding={32} style={{ textAlign: 'center' }}>
+      <div className="tu-muted" style={{ fontSize: 13 }}>ฟีเจอร์นี้ใช้งานได้เมื่อเชื่อมต่อ Supabase แล้วเท่านั้น</div>
+    </Card>
+  );
+
+  if (pending.length === 0) return (
+    <Card padding={48} style={{ textAlign: 'center' }}>
+      <div style={{ fontSize: 36, marginBottom: 12 }}>✅</div>
+      <div style={{ fontSize: 16, fontWeight: 600 }}>ไม่มีผู้ลงทะเบียนรอการอนุมัติ</div>
+      <div className="tu-muted" style={{ fontSize: 13, marginTop: 6 }}>เมื่อผู้เข้าพักสมัครผ่านหน้าเว็บ จะปรากฏที่นี่</div>
+    </Card>
+  );
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {pending.map(p => (
+        <Card key={p.id} padding={16}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            <Avatar name={p.full_name || p.email || '?'} size={44} />
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 600, fontSize: 15 }}>{p.full_name || '(ไม่ระบุชื่อ)'}</div>
+              <div className="tu-muted" style={{ fontSize: 12.5 }}>{p.email || '—'}</div>
+              {p.phone && <div className="tu-muted" style={{ fontSize: 12 }}>{p.phone}</div>}
+              <div className="tu-muted" style={{ fontSize: 11.5, marginTop: 4 }}>
+                ลงทะเบียนเมื่อ {new Date(p.created_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' })}
+              </div>
+            </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              <Button size="sm" onClick={() => setSelected(p)}>อนุมัติ & ผูกห้อง</Button>
+              <Button size="sm" variant="secondary"
+                onClick={() => handleReject(p)}
+                disabled={rejecting === p.id}>
+                {rejecting === p.id ? '...' : 'ปฏิเสธ'}
+              </Button>
+            </div>
+          </div>
+        </Card>
+      ))}
+      <ApproveModal
+        profile={selected}
+        onClose={() => setSelected(null)}
+        onDone={() => {
+          setPending(p => p.filter(x => x.id !== selected?.id));
+          setSelected(null);
+          if (onApproved) onApproved();
+        }}
+      />
+    </div>
+  );
+}
+
+function ApproveModal({ profile, onClose, onDone }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [form, setForm] = React.useState({ type: 'monthly', room: '', checkIn: today, deposit: 5000 });
+  const [saving, setSaving] = React.useState(false);
+  const [error, setError] = React.useState(null);
+  const upd = (k, v) => setForm(p => ({ ...p, [k]: v, ...(k === 'type' ? { deposit: v === 'monthly' ? 5000 : 200, room: '' } : {}) }));
+
+  React.useEffect(() => {
+    if (profile) setForm({ type: 'monthly', room: '', checkIn: today, deposit: 5000 });
+  }, [profile?.id]);
+
+  if (!profile) return null;
+
+  const availableRooms = ROOMS.filter(r => r.type === form.type && r.status === 'vacant');
+
+  const handleApprove = async () => {
+    if (!form.room) return;
+    setSaving(true); setError(null);
+    try {
+      const { count } = await window.sb.from('tenants').select('*', { count: 'exact', head: true });
+      const newId = 'T' + String((count || 0) + 1).padStart(4, '0');
+      const { error: e1 } = await window.sb.from('tenants').insert({
+        id: newId,
+        name: profile.full_name || '(ไม่ระบุชื่อ)',
+        room_id: form.room, type: form.type,
+        check_in: form.checkIn,
+        deposit: Number(form.deposit),
+        status: 'occupied', profile_id: profile.id,
+      });
+      if (e1) throw e1;
+      await Promise.all([
+        window.sb.from('rooms').update({ status: 'occupied' }).eq('id', form.room),
+        window.sb.from('profiles').update({ room_id: form.room }).eq('id', profile.id),
+      ]);
+      if (window.TU?.refreshData) await window.TU.refreshData();
+      onDone();
+    } catch (e) {
+      setError(e.message || 'เกิดข้อผิดพลาด กรุณาลองใหม่');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal open={!!profile} onClose={onClose} title={`อนุมัติ — ${profile.full_name || profile.email}`} width={520}
+      footer={<>
+        <Button variant="secondary" onClick={onClose} disabled={saving}>ยกเลิก</Button>
+        <Button onClick={handleApprove} disabled={!form.room || saving} icon={saving ? null : I.check}>
+          {saving ? 'กำลังบันทึก...' : 'อนุมัติ & ผูกห้อง'}
+        </Button>
+      </>}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '12px 16px', background: 'var(--surface-2)', borderRadius: 12, marginBottom: 20 }}>
+        <Avatar name={profile.full_name || profile.email || '?'} size={40} />
+        <div>
+          <div style={{ fontWeight: 600 }}>{profile.full_name || '(ไม่ระบุชื่อ)'}</div>
+          <div className="tu-muted" style={{ fontSize: 12 }}>{profile.email} {profile.phone ? `• ${profile.phone}` : ''}</div>
+        </div>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 8, color: 'var(--muted)' }}>ประเภทการเช่า</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            {[{ v: 'monthly', t: 'รายเดือน', s: '฿4,000/เดือน • มัดจำ ฿5,000' },
+              { v: 'daily', t: 'รายวัน', s: '฿500/คืน • มัดจำ ฿200' }].map(o => (
+              <button key={o.v} onClick={() => upd('type', o.v)} style={{
+                textAlign: 'left', padding: '10px 14px', borderRadius: 10, fontFamily: 'inherit', cursor: 'pointer',
+                border: form.type === o.v ? '2px solid var(--primary)' : '1px solid var(--border)',
+                background: form.type === o.v ? 'var(--primary-soft)' : 'var(--surface)',
+              }}>
+                <div style={{ fontSize: 13.5, fontWeight: 600, color: form.type === o.v ? 'var(--primary)' : 'var(--text)' }}>{o.t}</div>
+                <div className="tu-muted" style={{ fontSize: 11.5, marginTop: 2 }}>{o.s}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 8, color: 'var(--muted)' }}>
+            เลือกห้องว่าง ({availableRooms.length} ห้อง)
+          </div>
+          {availableRooms.length === 0
+            ? <div style={{ padding: '12px 14px', borderRadius: 10, background: '#fcd2d2', color: '#9b1c1c', fontSize: 13 }}>
+                ไม่มีห้องว่างประเภท{form.type === 'monthly' ? 'รายเดือน' : 'รายวัน'}
+              </div>
+            : <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 8 }}>
+                {availableRooms.map(r => (
+                  <button key={r.id} onClick={() => upd('room', r.id)} style={{
+                    padding: '10px 4px', borderRadius: 8, fontSize: 13, fontWeight: 600,
+                    fontFamily: 'inherit', cursor: 'pointer',
+                    border: form.room === r.id ? '2px solid var(--primary)' : '1px solid var(--border)',
+                    background: form.room === r.id ? 'var(--primary)' : 'var(--surface)',
+                    color: form.room === r.id ? '#fff' : 'var(--text)',
+                  }}>{r.id}</button>
+                ))}
+              </div>
+          }
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <Input label="วันที่เข้าพัก" type="date" value={form.checkIn} onChange={v => upd('checkIn', v)} />
+          <Input label="เงินมัดจำ" prefix="฿" value={form.deposit} onChange={v => upd('deposit', v)} />
+        </div>
+        {error && <div style={{ padding: '10px 14px', borderRadius: 10, background: '#fcd2d2', color: '#9b1c1c', fontSize: 13 }}>{error}</div>}
+      </div>
+    </Modal>
   );
 }
 
@@ -6125,7 +6327,8 @@ function SignUpForm({ onSubmit }) {
     // to a room from the Tenants screen — see database/SETUP.md).
     if (data.user) {
       await window.sb.from('profiles').insert({
-        id: data.user.id, role: 'tenant', full_name: form.name, phone: form.phone,
+        id: data.user.id, role: 'tenant', full_name: form.name,
+        phone: form.phone, email: form.email,
       });
     }
     setBusy(false);
