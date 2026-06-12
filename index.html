@@ -3014,6 +3014,7 @@ function AdminTenants() {
 function TenantList() {
   const [query, setQuery] = React.useState('');
   const [type, setType] = React.useState('all');
+  const [selected, setSelected] = React.useState(null);
   const filtered = TENANTS.filter(t => {
     if (type !== 'all' && t.type !== type) return false;
     if (query && !(t.name.includes(query) || t.room.includes(query) || t.id.includes(query))) return false;
@@ -3053,12 +3054,73 @@ function TenantList() {
               <td style={{ fontVariantNumeric: 'tabular-nums' }}>{t.phone}</td>
               <td>{formatDate(t.checkIn)}</td>
               <td><Badge tone={STATUS_META[t.status].tone} dot>{STATUS_META[t.status].th}</Badge></td>
-              <td><button className="tu-link">ดูข้อมูล →</button></td>
+              <td><button className="tu-link" onClick={() => setSelected(t)}>ดูข้อมูล →</button></td>
             </tr>
           ))}
         </tbody>
       </table>
+      <TenantDetailModal tenant={selected} onClose={() => setSelected(null)} />
     </Card>
+  );
+}
+
+function TenantDetailModal({ tenant, onClose }) {
+  if (!tenant) return null;
+  const room = ROOMS.find(r => r.id === tenant.room) || {};
+  const invoices = INVOICES.filter(i => i.room === tenant.room);
+  const unpaid = invoices.filter(i => i.status !== 'paid');
+
+  const handleContract = () => openContractWindow({
+    name: tenant.name, idCard: tenant.idCard || '', phone: tenant.phone || '',
+    room: tenant.room, type: tenant.type, rent: room.rent || tenant.deposit,
+    deposit: tenant.deposit, checkIn: tenant.checkIn,
+    contractMonths: null, bookingStatus: 'occupied',
+    bookingFee: 0, bookingUntil: '', paymentMethod: 'cash',
+  });
+
+  return (
+    <Modal open={!!tenant} onClose={onClose} title={`${tenant.name} — ห้อง ${tenant.room}`} width={560}
+      footer={<>
+        <Button variant="secondary" icon={I.download} onClick={handleContract}>สร้างสัญญาเช่า</Button>
+        <div style={{ flex: 1 }} />
+        <Button variant="secondary" onClick={onClose}>ปิด</Button>
+      </>}>
+      <div style={{ display: 'flex', gap: 14, alignItems: 'center', padding: '12px 16px', background: 'var(--surface-2)', borderRadius: 12, marginBottom: 20 }}>
+        <Avatar name={tenant.name} size={44} />
+        <div style={{ flex: 1 }}>
+          <div style={{ fontWeight: 600, fontSize: 15 }}>{tenant.name}</div>
+          <div className="tu-muted" style={{ fontSize: 12, marginTop: 2 }}>{tenant.id} • {tenant.phone}</div>
+        </div>
+        <Badge tone={STATUS_META[tenant.status]?.tone} dot>{STATUS_META[tenant.status]?.th}</Badge>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 18 }}>
+        <div>
+          <SectionTitle>ข้อมูลการเช่า</SectionTitle>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <KV label="ห้อง" value={`${tenant.room} (ชั้น ${room.floor || '—'})`} />
+            <KV label="ประเภท" value={tenant.type === 'monthly' ? 'รายเดือน' : 'รายวัน'} />
+            <KV label="ค่าเช่า" value={`฿${(room.rent || 0).toLocaleString()} / ${tenant.type === 'monthly' ? 'เดือน' : 'คืน'}`} />
+            <KV label="เงินมัดจำ" value={`฿${(tenant.deposit || 0).toLocaleString()}`} />
+            <KV label="วันเข้าพัก" value={formatDate(tenant.checkIn)} />
+            {tenant.checkOut && <KV label="สิ้นสุดสัญญา" value={formatDate(tenant.checkOut)} />}
+          </div>
+        </div>
+        {unpaid.length > 0 && (
+          <div>
+            <SectionTitle>ใบแจ้งหนี้ค้างชำระ ({unpaid.length} รายการ)</SectionTitle>
+            {unpaid.slice(0, 3).map(inv => (
+              <div key={inv.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '8px 12px', background: 'var(--surface-2)', borderRadius: 8, marginBottom: 6 }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 500 }}>{inv.id}</div>
+                  <div className="tu-muted" style={{ fontSize: 12 }}>{inv.period} • ครบกำหนด {formatDate(inv.dueDate)}</div>
+                </div>
+                <div style={{ fontSize: 14, fontWeight: 600, color: inv.status === 'overdue' ? '#b13e3e' : 'var(--text)' }}>฿{(inv.total || 0).toLocaleString()}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </Modal>
   );
 }
 
@@ -6433,6 +6495,17 @@ function PortalPromos() {
 }
 
 function PortalProfile() {
+  const tenant = TENANTS.find(t => t.room === DEMO_TENANT.room) || DEMO_TENANT;
+  const room = ROOMS.find(r => r.id === DEMO_TENANT.room) || {};
+
+  const handleContract = () => openContractWindow({
+    name: DEMO_TENANT.name, idCard: DEMO_TENANT.idCard || '', phone: DEMO_TENANT.phone || '',
+    room: DEMO_TENANT.room, type: tenant.type || 'monthly',
+    rent: room.rent || 4000, deposit: DEMO_TENANT.deposit,
+    checkIn: DEMO_TENANT.checkIn, contractMonths: null,
+    bookingStatus: 'occupied', bookingFee: 0, bookingUntil: '', paymentMethod: 'cash',
+  });
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
       <Card style={{ textAlign: 'center', padding: 28 }}>
@@ -6452,7 +6525,24 @@ function PortalProfile() {
           <KV label="เบอร์โทร" value={DEMO_TENANT.phone} />
           <KV label="LINE" value="@piyaporn-jaidee" />
           <KV label="เงินมัดจำประกัน" value={`฿${DEMO_TENANT.deposit.toLocaleString()}`} />
+          <KV label="ค่าเช่า" value={`฿${(room.rent || 4000).toLocaleString()} / เดือน`} />
         </div>
+      </Card>
+
+      {/* Contract section */}
+      <Card>
+        <SectionTitle>สัญญาเช่า</SectionTitle>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, padding: '12px 14px', background: 'var(--surface-2)', borderRadius: 10, marginBottom: 12 }}>
+          <div style={{ width: 40, height: 40, borderRadius: 10, background: 'var(--primary-soft)', color: 'var(--primary)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14,2 14,8 20,8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/><polyline points="10,9 9,9 8,9"/></svg>
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 13.5, fontWeight: 500 }}>สัญญาเช่าห้อง {DEMO_TENANT.room}</div>
+            <div className="tu-muted" style={{ fontSize: 12, marginTop: 2 }}>เข้าพักตั้งแต่ {formatDate(DEMO_TENANT.checkIn)}</div>
+          </div>
+          <Button size="sm" icon={I.download} onClick={handleContract}>ดาวน์โหลด</Button>
+        </div>
+        <div className="tu-muted" style={{ fontSize: 12 }}>กดดาวน์โหลดเพื่อดูสัญญาเช่าและบันทึกเป็น PDF</div>
       </Card>
 
       <Card>
