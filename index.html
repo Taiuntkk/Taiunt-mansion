@@ -2606,13 +2606,18 @@ function RoomDetailModal({ room, onClose, goto }) {
     }
   };
 
-  const switchType = (newType) => {
+  const switchType = async (newType) => {
     if (room.type === newType) return;
-    room.type = newType;
-    room.rent = newType === 'monthly' ? 4000 : 500;
-    room.size = newType === 'monthly' ? 24 : 18;
-    room.bed = newType === 'monthly' ? 'เตียงคู่' : 'เตียงเดี่ยว';
+    const defPr = RATE_CONFIG.presets.find(p => p.type === newType);
+    const newRent = defPr ? defPr.rent : (newType === 'monthly' ? 4000 : 500);
+    const newSize = newType === 'monthly' ? 24 : 18;
+    const newBed  = newType === 'monthly' ? 'เตียงคู่' : 'เตียงเดี่ยว';
+    room.type = newType; room.rent = newRent; room.size = newSize; room.bed = newBed;
     force();
+    if (window.sb) {
+      await window.sb.from('rooms').update({ type: newType, rent: newRent, size: newSize, bed: newBed }).eq('id', room.id);
+      if (window.TU?.refreshData) window.TU.refreshData();
+    }
   };
 
   return (
@@ -2650,9 +2655,10 @@ function RoomDetailModal({ room, onClose, goto }) {
         <SectionTitle>ประเภทการเช่า</SectionTitle>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
           {[
-            { v: 'monthly', t: 'รายเดือน', s: '฿4,000 / เดือน' },
-            { v: 'daily', t: 'รายวัน', s: '฿500 / คืน' },
+            { v: 'monthly', t: 'รายเดือน' },
+            { v: 'daily',   t: 'รายวัน' },
           ].map(o => {
+            const pr = RATE_CONFIG.presets.find(p => p.type === o.v);
             const active = room.type === o.v;
             return (
               <button key={o.v} onClick={() => canSwitchType && switchType(o.v)} disabled={!canSwitchType}
@@ -2668,7 +2674,7 @@ function RoomDetailModal({ room, onClose, goto }) {
                   <span style={{ fontSize: 13.5, fontWeight: 600, color: active ? 'var(--primary)' : 'var(--text)' }}>{o.t}</span>
                   {active && <span style={{ color: 'var(--primary)', display: 'flex' }}>{I.check}</span>}
                 </div>
-                <div className="tu-muted" style={{ fontSize: 11.5, marginTop: 2 }}>{o.s}</div>
+                <div className="tu-muted" style={{ fontSize: 11.5, marginTop: 2 }}>{pr ? `฿${pr.rent.toLocaleString()} / ${o.v === 'monthly' ? 'เดือน' : 'คืน'}` : '—'}</div>
               </button>
             );
           })}
