@@ -3062,12 +3062,135 @@ function TenantList() {
   );
 }
 
+// ─── Contract Generator ───────────────────────────────────────────────────
+function openContractWindow(data) {
+  const addMonths = (dateStr, n) => { const d = new Date(dateStr); d.setMonth(d.getMonth() + n); return d; };
+  const fmtTH = (d) => new Date(d).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' });
+  const checkOut = data.contractMonths ? addMonths(data.checkIn, data.contractMonths) : null;
+  const pm = RATE_CONFIG.paymentMethods.find(p => p.id === data.paymentMethod) || { label: data.paymentMethod, detail: '' };
+  const roomObj = ROOMS.find(r => r.id === data.room) || {};
+
+  const html = `<!DOCTYPE html><html lang="th"><head><meta charset="utf-8">
+<title>สัญญาเช่า — ห้อง ${data.room}</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Sarabun:wght@300;400;500;600;700&display=swap');
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Sarabun', sans-serif; font-size: 15px; color: #1a1a1a; background: #fff; padding: 0; }
+  .page { max-width: 720px; margin: 0 auto; padding: 40px 48px 60px; }
+  h1 { font-size: 20px; font-weight: 700; text-align: center; margin-bottom: 4px; }
+  .subtitle { text-align: center; font-size: 13px; color: #555; margin-bottom: 28px; }
+  .section { margin-bottom: 20px; }
+  .section-title { font-size: 13px; font-weight: 700; letter-spacing: .06em; text-transform: uppercase; color: #555; border-bottom: 1px solid #ddd; padding-bottom: 6px; margin-bottom: 14px; }
+  .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 24px; }
+  .kv { margin-bottom: 8px; }
+  .kv .label { font-size: 12px; color: #777; margin-bottom: 2px; }
+  .kv .val { font-size: 14.5px; font-weight: 500; border-bottom: 1px solid #ccc; padding-bottom: 3px; min-height: 24px; }
+  .clause { font-size: 13.5px; line-height: 1.85; margin-bottom: 10px; }
+  .clause-num { font-weight: 600; }
+  .sig-row { display: grid; grid-template-columns: 1fr 1fr; gap: 40px; margin-top: 48px; }
+  .sig-box { text-align: center; }
+  .sig-line { border-bottom: 1px solid #aaa; margin: 60px 20px 8px; }
+  .sig-label { font-size: 13px; color: #555; }
+  .highlight { background: #f0f7f0; border-left: 3px solid #2a7a3b; padding: 10px 14px; border-radius: 0 8px 8px 0; margin-bottom: 12px; }
+  @media print { body { padding: 0; } .page { padding: 20px 30px 40px; } .no-print { display: none; } }
+</style>
+</head><body>
+<div class="no-print" style="background:#f4f4f4;padding:12px 24px;display:flex;align-items:center;gap:12px;border-bottom:1px solid #ddd">
+  <strong style="font-family:sans-serif;font-size:14px">สัญญาเช่าห้อง ${data.room}</strong>
+  <button onclick="window.print()" style="margin-left:auto;padding:8px 20px;background:#2a7a3b;color:#fff;border:0;border-radius:6px;font-size:14px;cursor:pointer;font-family:inherit">🖨 พิมพ์ / บันทึก PDF</button>
+</div>
+<div class="page">
+  <h1>หนังสือสัญญาเช่าที่พักอาศัย</h1>
+  <div class="subtitle">TaiUnt Mansion Park — ไท้อันแมนชั่น ปาร์ค</div>
+
+  <div class="highlight">
+    <div style="font-size:13px;color:#555;margin-bottom:4px">วันที่ทำสัญญา</div>
+    <div style="font-weight:600">${fmtTH(new Date())}</div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">คู่สัญญา</div>
+    <div class="grid">
+      <div>
+        <div class="kv"><div class="label">ผู้ให้เช่า</div><div class="val">ไท้อันแมนชั่น ปาร์ค</div></div>
+        <div class="kv"><div class="label">ที่อยู่</div><div class="val">ถ.ศรีจันทร์ อ.เมือง จ.ขอนแก่น</div></div>
+        <div class="kv"><div class="label">โทรศัพท์</div><div class="val">095-982-6490 / 043-224-900</div></div>
+      </div>
+      <div>
+        <div class="kv"><div class="label">ผู้เช่า</div><div class="val">${data.name || '______________________'}</div></div>
+        <div class="kv"><div class="label">เลขบัตรประชาชน</div><div class="val">${data.idCard || '______________________'}</div></div>
+        <div class="kv"><div class="label">โทรศัพท์</div><div class="val">${data.phone || '______________________'}</div></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="section-title">รายละเอียดห้องพัก</div>
+    <div class="grid">
+      <div class="kv"><div class="label">ห้องเลขที่</div><div class="val">${data.room} (ชั้น ${roomObj.floor || '—'})</div></div>
+      <div class="kv"><div class="label">ประเภท</div><div class="val">${data.type === 'monthly' ? 'รายเดือน' : 'รายวัน'}</div></div>
+      <div class="kv"><div class="label">ค่าเช่า</div><div class="val">฿${Number(data.rent).toLocaleString()} / ${data.type === 'monthly' ? 'เดือน' : 'คืน'}</div></div>
+      <div class="kv"><div class="label">เงินมัดจำ</div><div class="val">฿${Number(data.deposit).toLocaleString()}</div></div>
+      <div class="kv"><div class="label">วันเริ่มสัญญา</div><div class="val">${fmtTH(data.checkIn)}</div></div>
+      <div class="kv"><div class="label">วันสิ้นสุดสัญญา</div><div class="val">${checkOut ? fmtTH(checkOut) : '______________________'}</div></div>
+      ${data.contractMonths ? `<div class="kv"><div class="label">ระยะสัญญา</div><div class="val">${data.contractMonths} เดือน</div></div>` : ''}
+      <div class="kv"><div class="label">วิธีชำระเงิน</div><div class="val">${pm.label}${pm.detail ? ` (${pm.detail})` : ''}</div></div>
+    </div>
+  </div>
+
+  ${data.bookingStatus === 'booked' && Number(data.bookingFee) > 0 ? `
+  <div class="section">
+    <div class="section-title">ค่าจอง</div>
+    <div class="grid">
+      <div class="kv"><div class="label">จำนวนเงินจอง</div><div class="val">฿${Number(data.bookingFee).toLocaleString()}</div></div>
+      ${data.bookingUntil ? `<div class="kv"><div class="label">จองถึงวันที่</div><div class="val">${fmtTH(data.bookingUntil)}</div></div>` : ''}
+    </div>
+  </div>` : ''}
+
+  <div class="section">
+    <div class="section-title">เงื่อนไขสัญญา</div>
+    <div class="clause"><span class="clause-num">ข้อ 1.</span> ผู้เช่าตกลงจ่ายค่าเช่า ฿${Number(data.rent).toLocaleString()} ล่วงหน้าทุกต้นเดือน ก่อนหรือภายในวันที่ 5 ของเดือน</div>
+    <div class="clause"><span class="clause-num">ข้อ 2.</span> ผู้เช่าชำระเงินมัดจำ ฿${Number(data.deposit).toLocaleString()} ก่อนเข้าพัก เงินมัดจำจะคืนเมื่อออกโดยไม่มีความเสียหาย</div>
+    <div class="clause"><span class="clause-num">ข้อ 3.</span> ผู้เช่าต้องแจ้งล่วงหน้าอย่างน้อย 30 วันก่อนย้ายออก มิฉะนั้นจะสูญเสียสิทธิ์คืนมัดจำ</div>
+    <div class="clause"><span class="clause-num">ข้อ 4.</span> ห้ามนำสัตว์เลี้ยงเข้าพัก ห้ามดัดแปลงหรือต่อเติมห้องโดยไม่ได้รับอนุญาต</div>
+    <div class="clause"><span class="clause-num">ข้อ 5.</span> ผู้เช่าต้องดูแลรักษาทรัพย์สินในห้องพัก หากเกิดความเสียหายผู้เช่าต้องรับผิดชอบค่าซ่อมแซม</div>
+    <div class="clause"><span class="clause-num">ข้อ 6.</span> ผู้ให้เช่าสงวนสิทธิ์เข้าตรวจสอบห้องพักโดยแจ้งล่วงหน้า 24 ชั่วโมง</div>
+    ${data.contractMonths ? `<div class="clause"><span class="clause-num">ข้อ 7.</span> สัญญาฉบับนี้มีกำหนดระยะเวลา <strong>${data.contractMonths} เดือน</strong> ตั้งแต่วันที่ ${fmtTH(data.checkIn)} ถึง ${checkOut ? fmtTH(checkOut) : '—'}</div>` : ''}
+  </div>
+
+  <div class="sig-row">
+    <div class="sig-box">
+      <div class="sig-line"></div>
+      <div class="sig-label">ผู้ให้เช่า</div>
+      <div class="sig-label" style="margin-top:4px">(ไท้อันแมนชั่น ปาร์ค)</div>
+      <div class="sig-label" style="margin-top:8px;color:#999">วันที่ ____________________</div>
+    </div>
+    <div class="sig-box">
+      <div class="sig-line"></div>
+      <div class="sig-label">ผู้เช่า</div>
+      <div class="sig-label" style="margin-top:4px">(${data.name || '______________________'})</div>
+      <div class="sig-label" style="margin-top:8px;color:#999">วันที่ ____________________</div>
+    </div>
+  </div>
+
+  <div style="text-align:center;margin-top:32px;font-size:12px;color:#999">สัญญาฉบับนี้ทำขึ้น 2 ฉบับ มีข้อความตรงกัน ให้คู่สัญญาถือไว้คนละฉบับ</div>
+</div>
+</body></html>`;
+
+  const w = window.open('', '_blank', 'width=820,height=960');
+  if (!w) { alert('กรุณาอนุญาต Popup ในเบราว์เซอร์'); return; }
+  w.document.write(html);
+  w.document.close();
+}
+
 function TenantRegister({ onDone }) {
   const today = new Date().toISOString().slice(0, 10);
   const blankForm = () => ({
     type: 'monthly', name: '', idCard: '', phone: '', email: '',
     room: '', rent: 4000, checkIn: today, deposit: 5000, notes: '',
     bookingStatus: 'occupied', bookingFee: 0, bookingUntil: '',
+    bookingDays: 7,
+    contractMonths: 1,
     paymentMethod: RATE_CONFIG.paymentMethods[0]?.id || 'cash',
   });
   const [form, setForm] = React.useState(blankForm);
@@ -3096,18 +3219,23 @@ function TenantRegister({ onDone }) {
     const roomStatus = form.bookingStatus === 'booked' ? 'booked' : 'occupied';
     const pmLabel = RATE_CONFIG.paymentMethods.find(p => p.id === form.paymentMethod)?.label || form.paymentMethod;
     const noteParts = [form.notes, `ชำระผ่าน: ${pmLabel}`, form.bookingStatus === 'booked' && Number(form.bookingFee) > 0 ? `ค่าจอง: ฿${Number(form.bookingFee).toLocaleString()}` : null].filter(Boolean);
+    const addMonths = (dateStr, n) => { const d = new Date(dateStr); d.setMonth(d.getMonth() + n); return d.toISOString().slice(0,10); };
+    const bookingUntil = form.bookingStatus === 'booked' ? (() => { const d = new Date(); d.setDate(d.getDate() + Number(form.bookingDays || 7)); return d.toISOString().slice(0,10); })() : null;
+    const checkOut = form.type === 'monthly' && form.contractMonths ? addMonths(form.checkIn, form.contractMonths) : null;
     try {
       const { count } = await window.sb.from('tenants').select('*', { count: 'exact', head: true });
       const newId = 'T' + String((count || 0) + 1).padStart(4, '0');
       const { error } = await window.sb.from('tenants').insert({
         id: newId, name: form.name, phone: form.phone, id_card: form.idCard,
         room_id: form.room, type: form.type, check_in: form.checkIn,
+        ...(checkOut ? { check_out: checkOut } : {}),
         deposit: Number(form.deposit), status: roomStatus,
         notes: noteParts.join(' | ') || null,
       });
       if (error) throw error;
       await window.sb.from('rooms').update({ status: roomStatus, rent: Number(form.rent) }).eq('id', form.room);
       if (window.TU?.refreshData) await window.TU.refreshData();
+      if (bookingUntil) setForm(f => ({ ...f, bookingUntil }));
       setSubmitted(true);
     } catch (e) {
       setSaveError(e.message || 'เกิดข้อผิดพลาด');
@@ -3132,7 +3260,8 @@ function TenantRegister({ onDone }) {
         <div className="tu-muted" style={{ fontSize: 13, marginTop: 6 }}>
           คุณ{form.name || 'ผู้เข้าพัก'} • ห้อง {form.room || '—'} • ค่าเช่า ฿{Number(form.rent).toLocaleString()}
         </div>
-        <div style={{ marginTop: 24, display: 'flex', gap: 8, justifyContent: 'center' }}>
+        <div style={{ marginTop: 24, display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
+          <Button variant="secondary" onClick={() => openContractWindow(form)} icon={I.download}>สร้างสัญญาเช่า</Button>
           <Button variant="secondary" onClick={() => { setSubmitted(false); setStep(1); setForm(blankForm()); }}>ลงทะเบียนคนใหม่</Button>
           <Button onClick={onDone}>ไปทะเบียนผู้เข้าพัก</Button>
         </div>
@@ -3257,11 +3386,39 @@ function TenantRegister({ onDone }) {
                   ))}
                 </div>
                 {form.bookingStatus === 'booked' && (
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 10 }}>
-                    <Input label="ถือจองถึงวันที่" type="date" value={form.bookingUntil} onChange={v => upd('bookingUntil', v)} />
-                    <Input label="ค่าจอง (ถ้ามี)" prefix="฿" value={form.bookingFee} onChange={v => upd('bookingFee', v)} />
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginTop: 10 }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                      <Input label="ค่าจอง (ถ้ามี)" prefix="฿" value={form.bookingFee} onChange={v => upd('bookingFee', v)} />
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 6, color: 'var(--muted)' }}>ถือจองนาน</div>
+                        <select value={form.bookingDays} onChange={e => upd('bookingDays', Number(e.target.value))} className="tu-select" style={{ width: '100%' }}>
+                          {[3,7,14,30].map(d => <option key={d} value={d}>{d} วัน</option>)}
+                        </select>
+                      </div>
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--muted)', padding: '6px 10px', background: 'var(--surface-2)', borderRadius: 8 }}>
+                      จองถึง: {(() => { const d = new Date(); d.setDate(d.getDate() + Number(form.bookingDays)); return d.toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' }); })()}
+                    </div>
                   </div>
                 )}
+
+              {/* Contract duration — monthly only */}
+              {form.type === 'monthly' && (
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 8, color: 'var(--muted)' }}>ระยะเวลาสัญญา</div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {[1, 3, 6, 12].map(m => (
+                      <button key={m} onClick={() => upd('contractMonths', m)} style={{
+                        padding: '7px 18px', borderRadius: 20, fontSize: 13, fontFamily: 'inherit', cursor: 'pointer', transition: 'all .12s',
+                        border: form.contractMonths === m ? '2px solid var(--primary)' : '1px solid var(--border)',
+                        background: form.contractMonths === m ? 'var(--primary)' : 'var(--surface)',
+                        color: form.contractMonths === m ? '#fff' : 'var(--text)',
+                        fontWeight: form.contractMonths === m ? 600 : 400,
+                      }}>{m === 1 ? '1 เดือน' : m === 3 ? '3 เดือน' : m === 6 ? '6 เดือน' : '12 เดือน'}</button>
+                    ))}
+                  </div>
+                </div>
+              )}
               </div>
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}>
@@ -3325,6 +3482,7 @@ function TenantRegister({ onDone }) {
                   <KV label="เข้าพัก" value={formatDate(form.checkIn)} />
                   <KV label="สถานะ" value={form.bookingStatus === 'booked' ? 'จองล่วงหน้า' : 'เข้าพักทันที'} />
                   <KV label="ชำระผ่าน" value={RATE_CONFIG.paymentMethods.find(p => p.id === form.paymentMethod)?.label || form.paymentMethod} />
+                  {form.type === 'monthly' && <KV label="ระยะสัญญา" value={`${form.contractMonths} เดือน`} />}
                   {form.bookingStatus === 'booked' && Number(form.bookingFee) > 0 && (
                     <KV label="ค่าจอง" value={`฿${Number(form.bookingFee).toLocaleString()}`} />
                   )}
@@ -3335,11 +3493,14 @@ function TenantRegister({ onDone }) {
                   {saveError}
                 </div>
               )}
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 8 }}>
                 <Button variant="secondary" onClick={() => setStep(2)} disabled={saving}>← ย้อนกลับ</Button>
-                <Button onClick={handleSubmit} icon={saving ? null : I.check} disabled={saving}>
-                  {saving ? 'กำลังบันทึก...' : form.bookingStatus === 'booked' ? 'ยืนยันการจอง' : 'ยืนยันการลงทะเบียน'}
-                </Button>
+                <div style={{ display: 'flex', gap: 8 }}>
+                  {form.name && form.room && <Button variant="secondary" icon={I.download} onClick={() => openContractWindow(form)}>ดูสัญญา</Button>}
+                  <Button onClick={handleSubmit} icon={saving ? null : I.check} disabled={saving}>
+                    {saving ? 'กำลังบันทึก...' : form.bookingStatus === 'booked' ? 'ยืนยันการจอง' : 'ยืนยันการลงทะเบียน'}
+                  </Button>
+                </div>
               </div>
             </div>
           )}
