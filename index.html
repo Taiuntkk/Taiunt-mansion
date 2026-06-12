@@ -3225,13 +3225,18 @@ function TenantRegister({ onDone }) {
     try {
       const { count } = await window.sb.from('tenants').select('*', { count: 'exact', head: true });
       const newId = 'T' + String((count || 0) + 1).padStart(4, '0');
-      const { error } = await window.sb.from('tenants').insert({
+      const insertData = {
         id: newId, name: form.name, phone: form.phone, id_card: form.idCard,
         room_id: form.room, type: form.type, check_in: form.checkIn,
         ...(checkOut ? { check_out: checkOut } : {}),
         deposit: Number(form.deposit), status: roomStatus,
-        notes: noteParts.join(' | ') || null,
-      });
+      };
+      const noteText = noteParts.join(' | ') || null;
+      // Try with notes first; if column missing, retry without
+      let { error } = await window.sb.from('tenants').insert({ ...insertData, notes: noteText });
+      if (error?.message?.includes('notes')) {
+        ({ error } = await window.sb.from('tenants').insert(insertData));
+      }
       if (error) throw error;
       await window.sb.from('rooms').update({ status: roomStatus, rent: Number(form.rent) }).eq('id', form.room);
       if (window.TU?.refreshData) await window.TU.refreshData();
