@@ -3007,7 +3007,7 @@ function TenantRegister({ onDone }) {
 function AdminPendingTenants({ onApproved }) {
   const [pending, setPending] = React.useState(null);
   const [selected, setSelected] = React.useState(null);
-  const [rejecting, setRejecting] = React.useState(null);
+  const [rejectTarget, setRejectTarget] = React.useState(null);
 
   const load = React.useCallback(async () => {
     if (!window.sb) { setPending([]); return; }
@@ -3018,12 +3018,11 @@ function AdminPendingTenants({ onApproved }) {
 
   React.useEffect(() => { load(); }, []);
 
-  const handleReject = async (profile) => {
-    setRejecting(profile.id);
+  const doReject = async (profile) => {
     await window.sb.from('profiles').delete().eq('id', profile.id);
     setPending(p => p.filter(x => x.id !== profile.id));
     if (onApproved) onApproved();
-    setRejecting(null);
+    setRejectTarget(null);
   };
 
   if (pending === null) return (
@@ -3062,11 +3061,7 @@ function AdminPendingTenants({ onApproved }) {
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
               <Button size="sm" onClick={() => setSelected(p)}>อนุมัติ & ผูกห้อง</Button>
-              <Button size="sm" variant="secondary"
-                onClick={() => handleReject(p)}
-                disabled={rejecting === p.id}>
-                {rejecting === p.id ? '...' : 'ปฏิเสธ'}
-              </Button>
+              <Button size="sm" variant="secondary" onClick={() => setRejectTarget(p)}>ปฏิเสธ</Button>
             </div>
           </div>
         </Card>
@@ -3079,6 +3074,11 @@ function AdminPendingTenants({ onApproved }) {
           setSelected(null);
           if (onApproved) onApproved();
         }}
+      />
+      <RejectModal
+        profile={rejectTarget}
+        onClose={() => setRejectTarget(null)}
+        onConfirm={() => doReject(rejectTarget)}
       />
     </div>
   );
@@ -3119,6 +3119,31 @@ function ApproveModal({ profile, onClose, onDone }) {
         window.sb.from('profiles').update({ room_id: form.room }).eq('id', profile.id),
       ]);
       if (window.TU?.refreshData) await window.TU.refreshData();
+      // ส่ง email ยินดีต้อนรับ
+      if (profile.email) {
+        const name = profile.full_name || 'ผู้เข้าพัก';
+        const siteUrl = window.location.origin;
+        const subject = encodeURIComponent('ยินดีต้อนรับสู่ ไท้อันแมนชั่น ปาร์ค 🏠');
+        const body = encodeURIComponent(
+          `เรียน คุณ${name}\n\n` +
+          `ยินดีต้อนรับสู่ ไท้อันแมนชั่น ปาร์ค อย่างเป็นทางการครับ/ค่ะ 🎉\n\n` +
+          `ทางเราได้อนุมัติการเข้าพักของท่านเรียบร้อยแล้ว ` +
+          `ท่านได้รับมอบหมาย ห้อง ${form.room} ` +
+          `(${form.type === 'monthly' ? 'รายเดือน' : 'รายวัน'}) ` +
+          `เริ่มตั้งแต่วันที่ ${new Date(form.checkIn).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })}\n\n` +
+          `ท่านสามารถเข้าใช้งานระบบจัดการห้องพักออนไลน์ได้ที่:\n` +
+          `${siteUrl}\n\n` +
+          `วิธีเข้าใช้งาน:\n` +
+          `1. คลิกลิงก์ด้านบน\n` +
+          `2. กด Sign in แล้วเข้าสู่ระบบด้วยอีเมลและรหัสผ่านที่ท่านลงทะเบียนไว้\n` +
+          `3. ท่านจะเห็นข้อมูลห้องพัก ใบแจ้งหนี้ และรายละเอียดต่าง ๆ ของท่านได้ทันที\n\n` +
+          `หากมีข้อสงสัยหรือต้องการความช่วยเหลือ สามารถติดต่อเราได้ที่ 095-982-6490\n\n` +
+          `ขอบคุณที่เลือกใช้บริการ และหวังเป็นอย่างยิ่งว่าจะได้ดูแลท่านอย่างดีที่สุดครับ/ค่ะ\n\n` +
+          `ด้วยความนับถือ\n` +
+          `ทีมงาน ไท้อันแมนชั่น ปาร์ค`
+        );
+        window.open(`mailto:${profile.email}?subject=${subject}&body=${body}`);
+      }
       onDone();
     } catch (e) {
       setError(e.message || 'เกิดข้อผิดพลาด กรุณาลองใหม่');
@@ -3186,6 +3211,68 @@ function ApproveModal({ profile, onClose, onDone }) {
         </div>
         {error && <div style={{ padding: '10px 14px', borderRadius: 10, background: '#fcd2d2', color: '#9b1c1c', fontSize: 13 }}>{error}</div>}
       </div>
+    </Modal>
+  );
+}
+
+function RejectModal({ profile, onClose, onConfirm }) {
+  const [sending, setSending] = React.useState(false);
+
+  if (!profile) return null;
+  const name = profile.full_name || 'ผู้สมัคร';
+
+  const subject = `แจ้งผลการพิจารณาใบสมัครเข้าพัก — ไท้อันแมนชั่น ปาร์ค`;
+  const emailBody =
+    `เรียน คุณ${name}\n\n` +
+    `ขอบคุณมากที่ให้ความสนใจและสมัครเข้าพักที่ ไท้อันแมนชั่น ปาร์ค ทางเราได้รับใบสมัครของท่านและพิจารณาแล้ว\n\n` +
+    `ขออภัยเป็นอย่างยิ่ง ในขณะนี้ยังไม่สามารถรับท่านเข้าพักได้ เนื่องจากห้องพักและเงื่อนไขบางประการยังไม่เป็นไปตามที่คาดหวัง\n\n` +
+    `หากในอนาคตท่านสนใจสมัครใหม่อีกครั้ง ยินดีต้อนรับเสมอครับ/ค่ะ\n\n` +
+    `ขอบคุณและขออภัยในความไม่สะดวกมา ณ ที่นี้ด้วย\n\n` +
+    `ด้วยความนับถือ\n` +
+    `ทีมงาน ไท้อันแมนชั่น ปาร์ค\n` +
+    `โทร 095-982-6490`;
+
+  const handleSendAndReject = async () => {
+    setSending(true);
+    if (profile.email) {
+      window.open(
+        `mailto:${profile.email}` +
+        `?subject=${encodeURIComponent(subject)}` +
+        `&body=${encodeURIComponent(emailBody)}`
+      );
+      await new Promise(r => setTimeout(r, 600));
+    }
+    await onConfirm();
+  };
+
+  return (
+    <Modal open={!!profile} onClose={onClose} title="ยืนยันการปฏิเสธ" width={520}
+      footer={<>
+        <Button variant="secondary" onClick={onClose} disabled={sending}>ยกเลิก</Button>
+        <Button onClick={handleSendAndReject} disabled={sending}
+          style={{ background: '#dc2626' }}>
+          {sending ? 'กำลังดำเนินการ...' : profile.email ? 'ส่ง Email & ปฏิเสธ' : 'ยืนยันปฏิเสธ'}
+        </Button>
+      </>}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 20 }}>
+        <Avatar name={name} size={40} />
+        <div>
+          <div style={{ fontWeight: 600 }}>{name}</div>
+          <div className="tu-muted" style={{ fontSize: 12 }}>{profile.email || 'ไม่มีอีเมล'}</div>
+        </div>
+      </div>
+      {profile.email && (
+        <div style={{ background: 'var(--surface-2)', borderRadius: 12, padding: 16 }}>
+          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '.05em' }}>ตัวอย่าง Email ที่จะส่ง</div>
+          <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 6 }}>หัวเรื่อง: {subject}</div>
+          <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.7, whiteSpace: 'pre-line' }}>{emailBody}</div>
+        </div>
+      )}
+      {!profile.email && (
+        <div style={{ padding: '10px 14px', borderRadius: 10, background: '#fef3c7', color: '#92400e', fontSize: 13 }}>
+          ผู้สมัครนี้ไม่มีอีเมล — จะปฏิเสธโดยไม่ส่ง email
+        </div>
+      )}
     </Modal>
   );
 }
