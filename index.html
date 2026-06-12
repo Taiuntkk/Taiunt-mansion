@@ -2566,10 +2566,31 @@ function RoomTile({ room, onClick }) {
 function RoomDetailModal({ room, onClose, goto }) {
   const [, force] = React.useReducer(x => x + 1, 0);
   const [checkout, setCheckout] = React.useState(false);
+  const [deleting, setDeleting] = React.useState(false);
   if (!room) return null;
   const tenant = TENANTS.find(t => t.room === room.id);
   const invoice = INVOICES.find(i => i.room === room.id && i.status !== 'paid');
-  const canSwitchType = room.status === 'vacant'; // only empty rooms
+  const canSwitchType = room.status === 'vacant';
+
+  const handleDelete = async () => {
+    if (!window.confirm(`ยืนยันลบห้อง ${room.id}? ไม่สามารถกู้คืนได้`)) return;
+    setDeleting(true);
+    try {
+      if (window.sb) {
+        const { error: e } = await window.sb.from('rooms').delete().eq('id', room.id);
+        if (e) throw e;
+        if (window.TU?.refreshData) await window.TU.refreshData();
+      } else {
+        const idx = ROOMS.findIndex(r => r.id === room.id);
+        if (idx !== -1) ROOMS.splice(idx, 1);
+      }
+      onClose();
+    } catch (e) {
+      alert('ลบไม่สำเร็จ: ' + (e.message || e));
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   const switchType = (newType) => {
     if (room.type === newType) return;
@@ -2583,6 +2604,8 @@ function RoomDetailModal({ room, onClose, goto }) {
   return (
     <Modal open={!!room} onClose={onClose} title={`ห้อง ${room.id}`} width={580}
       footer={<>
+        {room.status === 'vacant' && <Button variant="danger" onClick={handleDelete} disabled={deleting}>{deleting ? 'กำลังลบ...' : 'ลบห้องนี้'}</Button>}
+        <div style={{ flex: 1 }} />
         <Button variant="secondary" onClick={onClose}>ปิด</Button>
         {room.status === 'vacant' && <Button onClick={() => { onClose(); goto('tenants'); }}>จองห้องนี้</Button>}
         {room.status === 'occupied' && <Button onClick={() => { onClose(); goto('billing'); }}>ดูใบแจ้งหนี้</Button>}
