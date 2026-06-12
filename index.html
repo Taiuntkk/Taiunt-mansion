@@ -215,17 +215,21 @@
 <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
 <script src="https://unpkg.com/@supabase/supabase-js@2/dist/umd/supabase.js" crossorigin="anonymous"></script>
+<script src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
 <script>
 // ── Database connection (Supabase) ──────────────────────────────────────────
-// Fill these in from your Supabase project: Project Settings → API
-// (see database/SETUP.md for the full walkthrough). Leaving them as-is keeps
-// the app running in demo mode against the bundled mock data.
 const SUPABASE_URL = 'https://ltdsdezecdwtubwiocdu.supabase.co';
 const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Imx0ZHNkZXplY2R3dHVid2lvY2R1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODExNzA1NjYsImV4cCI6MjA5Njc0NjU2Nn0.7eE8KbCUuqQJusosgmxGFY_h7_ZyGN2fzWT8i1xU_6k';
 
 window.sb = (SUPABASE_URL.startsWith('https://') && SUPABASE_ANON_KEY.length > 20)
   ? window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
   : null;
+
+// ── Email (EmailJS) ─────────────────────────────────────────────────────────
+const EJ_SERVICE  = 'service_9l32rdz';
+const EJ_APPROVE  = 'approve_tenant';
+const EJ_REJECT   = 'reject_tenant';
+emailjs.init('waq5oA61IcBepa0Z8');
 
 // Mock data for TaiUnt Mansion Park
 (function(){
@@ -3121,28 +3125,14 @@ function ApproveModal({ profile, onClose, onDone }) {
       if (window.TU?.refreshData) await window.TU.refreshData();
       // ส่ง email ยินดีต้อนรับ
       if (profile.email) {
-        const name = profile.full_name || 'ผู้เข้าพัก';
-        const siteUrl = window.location.origin;
-        const subject = encodeURIComponent('ยินดีต้อนรับสู่ ไท้อันแมนชั่น ปาร์ค 🏠');
-        const body = encodeURIComponent(
-          `เรียน คุณ${name}\n\n` +
-          `ยินดีต้อนรับสู่ ไท้อันแมนชั่น ปาร์ค อย่างเป็นทางการครับ/ค่ะ 🎉\n\n` +
-          `ทางเราได้อนุมัติการเข้าพักของท่านเรียบร้อยแล้ว ` +
-          `ท่านได้รับมอบหมาย ห้อง ${form.room} ` +
-          `(${form.type === 'monthly' ? 'รายเดือน' : 'รายวัน'}) ` +
-          `เริ่มตั้งแต่วันที่ ${new Date(form.checkIn).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' })}\n\n` +
-          `ท่านสามารถเข้าใช้งานระบบจัดการห้องพักออนไลน์ได้ที่:\n` +
-          `${siteUrl}\n\n` +
-          `วิธีเข้าใช้งาน:\n` +
-          `1. คลิกลิงก์ด้านบน\n` +
-          `2. กด Sign in แล้วเข้าสู่ระบบด้วยอีเมลและรหัสผ่านที่ท่านลงทะเบียนไว้\n` +
-          `3. ท่านจะเห็นข้อมูลห้องพัก ใบแจ้งหนี้ และรายละเอียดต่าง ๆ ของท่านได้ทันที\n\n` +
-          `หากมีข้อสงสัยหรือต้องการความช่วยเหลือ สามารถติดต่อเราได้ที่ 095-982-6490\n\n` +
-          `ขอบคุณที่เลือกใช้บริการ และหวังเป็นอย่างยิ่งว่าจะได้ดูแลท่านอย่างดีที่สุดครับ/ค่ะ\n\n` +
-          `ด้วยความนับถือ\n` +
-          `ทีมงาน ไท้อันแมนชั่น ปาร์ค`
-        );
-        window.open(`mailto:${profile.email}?subject=${subject}&body=${body}`);
+        await emailjs.send(EJ_SERVICE, EJ_APPROVE, {
+          to_email: profile.email,
+          to_name: profile.full_name || 'ผู้เข้าพัก',
+          room_number: form.room,
+          room_type: form.type === 'monthly' ? 'รายเดือน' : 'รายวัน',
+          check_in_date: new Date(form.checkIn).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' }),
+          site_url: window.location.origin,
+        });
       }
       onDone();
     } catch (e) {
@@ -3221,26 +3211,13 @@ function RejectModal({ profile, onClose, onConfirm }) {
   if (!profile) return null;
   const name = profile.full_name || 'ผู้สมัคร';
 
-  const subject = `แจ้งผลการพิจารณาใบสมัครเข้าพัก — ไท้อันแมนชั่น ปาร์ค`;
-  const emailBody =
-    `เรียน คุณ${name}\n\n` +
-    `ขอบคุณมากที่ให้ความสนใจและสมัครเข้าพักที่ ไท้อันแมนชั่น ปาร์ค ทางเราได้รับใบสมัครของท่านและพิจารณาแล้ว\n\n` +
-    `ขออภัยเป็นอย่างยิ่ง ในขณะนี้ยังไม่สามารถรับท่านเข้าพักได้ เนื่องจากห้องพักและเงื่อนไขบางประการยังไม่เป็นไปตามที่คาดหวัง\n\n` +
-    `หากในอนาคตท่านสนใจสมัครใหม่อีกครั้ง ยินดีต้อนรับเสมอครับ/ค่ะ\n\n` +
-    `ขอบคุณและขออภัยในความไม่สะดวกมา ณ ที่นี้ด้วย\n\n` +
-    `ด้วยความนับถือ\n` +
-    `ทีมงาน ไท้อันแมนชั่น ปาร์ค\n` +
-    `โทร 095-982-6490`;
-
   const handleSendAndReject = async () => {
     setSending(true);
     if (profile.email) {
-      window.open(
-        `mailto:${profile.email}` +
-        `?subject=${encodeURIComponent(subject)}` +
-        `&body=${encodeURIComponent(emailBody)}`
-      );
-      await new Promise(r => setTimeout(r, 600));
+      await emailjs.send(EJ_SERVICE, EJ_REJECT, {
+        to_email: profile.email,
+        to_name: name,
+      });
     }
     await onConfirm();
   };
@@ -3261,18 +3238,15 @@ function RejectModal({ profile, onClose, onConfirm }) {
           <div className="tu-muted" style={{ fontSize: 12 }}>{profile.email || 'ไม่มีอีเมล'}</div>
         </div>
       </div>
-      {profile.email && (
-        <div style={{ background: 'var(--surface-2)', borderRadius: 12, padding: 16 }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--muted)', marginBottom: 8, textTransform: 'uppercase', letterSpacing: '.05em' }}>ตัวอย่าง Email ที่จะส่ง</div>
-          <div style={{ fontSize: 12.5, fontWeight: 600, marginBottom: 6 }}>หัวเรื่อง: {subject}</div>
-          <div style={{ fontSize: 12, color: 'var(--muted)', lineHeight: 1.7, whiteSpace: 'pre-line' }}>{emailBody}</div>
-        </div>
-      )}
-      {!profile.email && (
-        <div style={{ padding: '10px 14px', borderRadius: 10, background: '#fef3c7', color: '#92400e', fontSize: 13 }}>
-          ผู้สมัครนี้ไม่มีอีเมล — จะปฏิเสธโดยไม่ส่ง email
-        </div>
-      )}
+      {profile.email
+        ? <div style={{ padding: '12px 16px', borderRadius: 12, background: 'var(--surface-2)', fontSize: 13, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+            <span style={{ fontSize: 18 }}>📧</span>
+            <span>ระบบจะส่ง email แจ้งผลไปยัง <strong>{profile.email}</strong> อัตโนมัติ แล้วลบบัญชีออกจากระบบ</span>
+          </div>
+        : <div style={{ padding: '10px 14px', borderRadius: 10, background: '#fef3c7', color: '#92400e', fontSize: 13 }}>
+            ผู้สมัครนี้ไม่มีอีเมล — จะปฏิเสธโดยไม่ส่ง email
+          </div>
+      }
     </Modal>
   );
 }
