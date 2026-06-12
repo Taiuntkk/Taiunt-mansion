@@ -2884,6 +2884,103 @@ function RefundLine({ label, value }) {
   );
 }
 
+// ─── Rate & Payment Config (persisted to localStorage) ───────────────────
+function loadRateConfig() { try { const v = localStorage.getItem('TU_RATE_CONFIG'); return v ? JSON.parse(v) : null; } catch { return null; } }
+let RATE_CONFIG = loadRateConfig() || {
+  presets: [
+    { id: 'monthly-std',  label: 'รายเดือน มาตรฐาน', type: 'monthly', rent: 4000, deposit: 5000 },
+    { id: 'monthly-prem', label: 'รายเดือน พรีเมียม',  type: 'monthly', rent: 5000, deposit: 10000 },
+    { id: 'daily-std',    label: 'รายวัน มาตรฐาน',    type: 'daily',   rent: 500,  deposit: 200 },
+    { id: 'daily-prem',   label: 'รายวัน พรีเมียม',   type: 'daily',   rent: 600,  deposit: 200 },
+  ],
+  paymentMethods: [
+    { id: 'qr',   label: 'QR PromptPay',  detail: '' },
+    { id: 'bank', label: 'โอนธนาคาร',     detail: '' },
+    { id: 'cash', label: 'เงินสด',         detail: 'รับที่สำนักงาน' },
+  ],
+};
+function saveRateConfig() { try { localStorage.setItem('TU_RATE_CONFIG', JSON.stringify(RATE_CONFIG)); } catch {} }
+
+// ─── Rate Settings Modal ──────────────────────────────────────────────────
+function RateSettingsModal({ open, onClose }) {
+  const [cfg, setCfg] = React.useState(null);
+  const [np, setNp] = React.useState({ type: 'monthly', label: '', rent: '', deposit: '' });
+  const [npm, setNpm] = React.useState({ label: '', detail: '' });
+
+  React.useEffect(() => {
+    if (open) setCfg(JSON.parse(JSON.stringify(RATE_CONFIG)));
+  }, [open]);
+
+  if (!open || !cfg) return null;
+
+  const addPreset = () => {
+    if (!np.label || !np.rent) return;
+    setCfg(c => ({ ...c, presets: [...c.presets, { id: Date.now().toString(), type: np.type, label: np.label, rent: Number(np.rent), deposit: Number(np.deposit) || 0 }] }));
+    setNp({ type: 'monthly', label: '', rent: '', deposit: '' });
+  };
+  const addPM = () => {
+    if (!npm.label) return;
+    setCfg(c => ({ ...c, paymentMethods: [...c.paymentMethods, { id: Date.now().toString(), label: npm.label, detail: npm.detail }] }));
+    setNpm({ label: '', detail: '' });
+  };
+  const save = () => { Object.assign(RATE_CONFIG, cfg); saveRateConfig(); onClose(); };
+
+  const inputStyle = { height: 34, border: '1px solid var(--border)', borderRadius: 8, padding: '0 10px', fontSize: 13, fontFamily: 'inherit', background: 'var(--surface)', color: 'var(--text)', width: '100%', outline: 'none' };
+  const rowStyle = { display: 'flex', alignItems: 'center', gap: 10, padding: '8px 12px', background: 'var(--surface-2)', borderRadius: 10, marginBottom: 6 };
+  const delBtn = { width: 26, height: 26, border: 0, borderRadius: 6, background: 'rgba(180,40,40,.08)', color: '#b13e3e', cursor: 'pointer', fontSize: 14, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 };
+
+  return (
+    <Modal open={open} onClose={onClose} title="ตั้งค่าอัตราค่าเช่า & วิธีชำระเงิน" width={580}
+      footer={<><Button variant="secondary" onClick={onClose}>ยกเลิก</Button><Button onClick={save} icon={I.check}>บันทึก</Button></>}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 24 }}>
+
+        {/* Rate presets */}
+        <div>
+          <SectionTitle>อัตราค่าเช่า (Quick Presets)</SectionTitle>
+          {cfg.presets.map((p, i) => (
+            <div key={p.id} style={rowStyle}>
+              <Badge tone={p.type === 'monthly' ? 'blue' : 'orange'} style={{ flexShrink: 0 }}>{p.type === 'monthly' ? 'เดือน' : 'วัน'}</Badge>
+              <div style={{ flex: 1, fontSize: 13, fontWeight: 500 }}>{p.label}</div>
+              <div className="tu-muted" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>฿{p.rent.toLocaleString()} / มัดจำ ฿{p.deposit.toLocaleString()}</div>
+              <button style={delBtn} onClick={() => setCfg(c => ({ ...c, presets: c.presets.filter((_, j) => j !== i) }))}>✕</button>
+            </div>
+          ))}
+          <div style={{ display: 'grid', gridTemplateColumns: '90px 1fr 100px 100px auto', gap: 6, marginTop: 10 }}>
+            <select value={np.type} onChange={e => setNp(p => ({ ...p, type: e.target.value }))} style={inputStyle}>
+              <option value="monthly">รายเดือน</option>
+              <option value="daily">รายวัน</option>
+            </select>
+            <input style={inputStyle} placeholder="ชื่ออัตรา เช่น พรีเมียม A" value={np.label} onChange={e => setNp(p => ({ ...p, label: e.target.value }))} />
+            <input style={inputStyle} placeholder="ค่าเช่า" type="number" value={np.rent} onChange={e => setNp(p => ({ ...p, rent: e.target.value }))} />
+            <input style={inputStyle} placeholder="มัดจำ" type="number" value={np.deposit} onChange={e => setNp(p => ({ ...p, deposit: e.target.value }))} />
+            <Button size="sm" icon={I.plus} onClick={addPreset} disabled={!np.label || !np.rent}>เพิ่ม</Button>
+          </div>
+        </div>
+
+        {/* Payment methods */}
+        <div>
+          <SectionTitle>วิธีชำระเงิน</SectionTitle>
+          {cfg.paymentMethods.map((pm, i) => (
+            <div key={pm.id} style={rowStyle}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 13, fontWeight: 500 }}>{pm.label}</div>
+                {pm.detail && <div className="tu-muted" style={{ fontSize: 12 }}>{pm.detail}</div>}
+              </div>
+              <button style={delBtn} onClick={() => setCfg(c => ({ ...c, paymentMethods: c.paymentMethods.filter((_, j) => j !== i) }))}>✕</button>
+            </div>
+          ))}
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', gap: 6, marginTop: 10 }}>
+            <input style={inputStyle} placeholder="ชื่อ เช่น โอนกสิกรไทย" value={npm.label} onChange={e => setNpm(p => ({ ...p, label: e.target.value }))} />
+            <input style={inputStyle} placeholder="รายละเอียด เช่น 123-4-56789-0" value={npm.detail} onChange={e => setNpm(p => ({ ...p, detail: e.target.value }))} />
+            <Button size="sm" icon={I.plus} onClick={addPM} disabled={!npm.label}>เพิ่ม</Button>
+          </div>
+        </div>
+
+      </div>
+    </Modal>
+  );
+}
+
 // ─── Tenants ────────────────────────────────────────────────────────────
 function AdminTenants() {
   const [tab, setTab] = React.useState('list');
@@ -2966,29 +3063,50 @@ function TenantList() {
 }
 
 function TenantRegister({ onDone }) {
-  const [form, setForm] = React.useState({
+  const today = new Date().toISOString().slice(0, 10);
+  const blankForm = () => ({
     type: 'monthly', name: '', idCard: '', phone: '', email: '',
-    room: '', checkIn: '2026-06-01', deposit: 5000, notes: '',
+    room: '', rent: 4000, checkIn: today, deposit: 5000, notes: '',
+    bookingStatus: 'occupied', bookingFee: 0, bookingUntil: '',
+    paymentMethod: RATE_CONFIG.paymentMethods[0]?.id || 'cash',
   });
+  const [form, setForm] = React.useState(blankForm);
   const [step, setStep] = React.useState(1);
   const [submitted, setSubmitted] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
   const [saveError, setSaveError] = React.useState(null);
-  const upd = (k, v) => setForm(p => ({ ...p, [k]: v, ...(k === 'type' ? { deposit: v === 'monthly' ? 5000 : 200, room: '' } : {}) }));
+  const [showRateSettings, setShowRateSettings] = React.useState(false);
+  const [, forceRender] = React.useReducer(x => x + 1, 0);
+
+  const upd = (k, v) => setForm(p => {
+    const next = { ...p, [k]: v };
+    if (k === 'type') {
+      const def = RATE_CONFIG.presets.find(pr => pr.type === v) || (v === 'monthly' ? { rent: 4000, deposit: 5000 } : { rent: 500, deposit: 200 });
+      next.rent = def.rent; next.deposit = def.deposit; next.room = '';
+    }
+    if (k === 'room' && v) { const r = ROOMS.find(rm => rm.id === v); if (r) next.rent = r.rent; }
+    return next;
+  });
+
+  const applyPreset = (p) => setForm(f => ({ ...f, rent: p.rent, deposit: p.deposit }));
 
   const handleSubmit = async () => {
     if (!window.sb) { setSubmitted(true); return; }
     setSaving(true); setSaveError(null);
+    const roomStatus = form.bookingStatus === 'booked' ? 'booked' : 'occupied';
+    const pmLabel = RATE_CONFIG.paymentMethods.find(p => p.id === form.paymentMethod)?.label || form.paymentMethod;
+    const noteParts = [form.notes, `ชำระผ่าน: ${pmLabel}`, form.bookingStatus === 'booked' && Number(form.bookingFee) > 0 ? `ค่าจอง: ฿${Number(form.bookingFee).toLocaleString()}` : null].filter(Boolean);
     try {
       const { count } = await window.sb.from('tenants').select('*', { count: 'exact', head: true });
       const newId = 'T' + String((count || 0) + 1).padStart(4, '0');
       const { error } = await window.sb.from('tenants').insert({
         id: newId, name: form.name, phone: form.phone, id_card: form.idCard,
         room_id: form.room, type: form.type, check_in: form.checkIn,
-        deposit: Number(form.deposit), status: 'occupied', notes: form.notes || null,
+        deposit: Number(form.deposit), status: roomStatus,
+        notes: noteParts.join(' | ') || null,
       });
       if (error) throw error;
-      await window.sb.from('rooms').update({ status: 'occupied' }).eq('id', form.room);
+      await window.sb.from('rooms').update({ status: roomStatus, rent: Number(form.rent) }).eq('id', form.room);
       if (window.TU?.refreshData) await window.TU.refreshData();
       setSubmitted(true);
     } catch (e) {
@@ -2997,7 +3115,9 @@ function TenantRegister({ onDone }) {
       setSaving(false);
     }
   };
+
   const availableRooms = ROOMS.filter(r => r.type === form.type && r.status === 'vacant');
+  const presets = RATE_CONFIG.presets.filter(p => p.type === form.type);
 
   if (submitted) {
     return (
@@ -3006,12 +3126,14 @@ function TenantRegister({ onDone }) {
           display: 'inline-flex', alignItems: 'center', justifyContent: 'center', color: 'var(--primary)', marginBottom: 16 }}>
           <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="m5 12 5 5L20 7" strokeLinecap="round" strokeLinejoin="round"/></svg>
         </div>
-        <div style={{ fontSize: 18, fontWeight: 600 }}>ลงทะเบียนสำเร็จ</div>
+        <div style={{ fontSize: 18, fontWeight: 600 }}>
+          {form.bookingStatus === 'booked' ? 'จองห้องสำเร็จ' : 'ลงทะเบียนสำเร็จ'}
+        </div>
         <div className="tu-muted" style={{ fontSize: 13, marginTop: 6 }}>
-          คุณ{form.name || 'ผู้เข้าพัก'} • ห้อง {form.room || '—'} • {form.type === 'monthly' ? 'รายเดือน' : 'รายวัน'}
+          คุณ{form.name || 'ผู้เข้าพัก'} • ห้อง {form.room || '—'} • ค่าเช่า ฿{Number(form.rent).toLocaleString()}
         </div>
         <div style={{ marginTop: 24, display: 'flex', gap: 8, justifyContent: 'center' }}>
-          <Button variant="secondary" onClick={() => { setSubmitted(false); setStep(1); setForm({ type: 'monthly', name: '', idCard: '', phone: '', email: '', room: '', checkIn: '2026-06-01', deposit: 5000, notes: '' }); }}>ลงทะเบียนคนใหม่</Button>
+          <Button variant="secondary" onClick={() => { setSubmitted(false); setStep(1); setForm(blankForm()); }}>ลงทะเบียนคนใหม่</Button>
           <Button onClick={onDone}>ไปทะเบียนผู้เข้าพัก</Button>
         </div>
       </Card>
@@ -3021,100 +3143,191 @@ function TenantRegister({ onDone }) {
   return (
     <Card padding={28}>
       <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: 32 }}>
-        {/* Steps */}
+        {/* Steps sidebar */}
         <div>
           <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 14 }}>ขั้นตอน</div>
-          {['ประเภทและห้อง', 'ข้อมูลส่วนตัว', 'ยืนยันและบันทึก'].map((s, i) => (
+          {['ห้องและราคา', 'ข้อมูล & ชำระเงิน', 'ยืนยันและบันทึก'].map((s, i) => (
             <div key={i} style={{ display: 'flex', gap: 12, alignItems: 'flex-start', marginBottom: 16 }}>
               <div style={{
                 width: 26, height: 26, borderRadius: '50%',
                 background: step > i + 1 ? 'var(--primary)' : step === i + 1 ? 'var(--primary)' : 'var(--surface-2)',
                 color: step >= i + 1 ? '#fff' : 'var(--muted)',
                 display: 'flex', alignItems: 'center', justifyContent: 'center',
-                fontSize: 12, fontWeight: 600, flexShrink: 0,
-                transition: 'all .25s',
+                fontSize: 12, fontWeight: 600, flexShrink: 0, transition: 'all .25s',
               }}>{step > i + 1 ? '✓' : i + 1}</div>
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 500, color: step === i + 1 ? 'var(--text)' : 'var(--muted)' }}>{s}</div>
-              </div>
+              <div style={{ fontSize: 13, fontWeight: 500, color: step === i + 1 ? 'var(--text)' : 'var(--muted)', paddingTop: 3 }}>{s}</div>
             </div>
           ))}
         </div>
-        {/* Form */}
+
+        {/* Form content */}
         <div>
+          {/* ── Step 1: Room, type, rent ── */}
           {step === 1 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+              {/* Type selector */}
               <div>
-                <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 8, color: 'var(--muted)' }}>ประเภทการเช่า</div>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                  <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--muted)' }}>ประเภทการเช่า</div>
+                  <button onClick={() => setShowRateSettings(true)} style={{
+                    display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--primary)',
+                    background: 'var(--primary-soft)', border: 0, borderRadius: 6, padding: '4px 10px', cursor: 'pointer', fontFamily: 'inherit',
+                  }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                    ตั้งค่าราคา
+                  </button>
+                </div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
-                  {[
-                    { v: 'monthly', t: 'รายเดือน', s: '฿4,000 / เดือน • มัดจำ ฿5,000', icon: '📅' },
-                    { v: 'daily', t: 'รายวัน', s: '฿500 / คืน • มัดจำกุญแจ ฿200', icon: '🌙' },
-                  ].map(o => (
-                    <button key={o.v} onClick={() => upd('type', o.v)}
-                      style={{
-                        textAlign: 'left', padding: 16, borderRadius: 12,
+                  {[{ v: 'monthly', t: 'รายเดือน' }, { v: 'daily', t: 'รายวัน' }].map(o => {
+                    const defPr = RATE_CONFIG.presets.find(p => p.type === o.v);
+                    return (
+                      <button key={o.v} onClick={() => upd('type', o.v)} style={{
+                        textAlign: 'left', padding: 16, borderRadius: 12, cursor: 'pointer', fontFamily: 'inherit', transition: 'all .15s',
                         border: form.type === o.v ? '2px solid var(--primary)' : '1px solid var(--border)',
                         background: form.type === o.v ? 'var(--primary-soft)' : 'var(--surface)',
-                        cursor: 'pointer', fontFamily: 'inherit',
-                        transition: 'all .15s',
                       }}>
-                      <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 2 }}>{o.t}</div>
-                      <div className="tu-muted" style={{ fontSize: 12 }}>{o.s}</div>
+                        <div style={{ fontSize: 14, fontWeight: 600, color: form.type === o.v ? 'var(--primary)' : 'var(--text)' }}>{o.t}</div>
+                        <div className="tu-muted" style={{ fontSize: 12, marginTop: 2 }}>{defPr ? `฿${defPr.rent.toLocaleString()} • มัดจำ ฿${defPr.deposit.toLocaleString()}` : '—'}</div>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Room selector */}
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 8, color: 'var(--muted)' }}>เลือกห้องว่าง ({availableRooms.length} ห้อง)</div>
+                {availableRooms.length === 0
+                  ? <div style={{ padding: '12px 14px', borderRadius: 10, background: '#fcd2d2', color: '#9b1c1c', fontSize: 13 }}>ไม่มีห้องว่างประเภท{form.type === 'monthly' ? 'รายเดือน' : 'รายวัน'}</div>
+                  : <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 8 }}>
+                      {availableRooms.map(r => (
+                        <button key={r.id} onClick={() => upd('room', r.id)} style={{
+                          padding: '10px 4px', borderRadius: 8, border: form.room === r.id ? '2px solid var(--primary)' : '1px solid var(--border)',
+                          background: form.room === r.id ? 'var(--primary)' : 'var(--surface)',
+                          color: form.room === r.id ? '#fff' : 'var(--text)',
+                          fontSize: 12, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', transition: 'all .15s', textAlign: 'center',
+                        }}>
+                          <div>{r.id}</div>
+                          <div style={{ fontSize: 10, opacity: .7, marginTop: 2 }}>฿{r.rent.toLocaleString()}</div>
+                        </button>
+                      ))}
+                    </div>
+                }
+              </div>
+
+              {/* Rent & deposit (editable) */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <Input label={`ค่าเช่า / ${form.type === 'monthly' ? 'เดือน' : 'คืน'}`} prefix="฿" value={form.rent} onChange={v => upd('rent', v)} />
+                <Input label={`เงินมัดจำ${form.type === 'monthly' ? 'ประกัน' : 'กุญแจ'}`} prefix="฿" value={form.deposit} onChange={v => upd('deposit', v)} />
+              </div>
+
+              {/* Quick presets */}
+              {presets.length > 0 && (
+                <div>
+                  <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 6 }}>เลือกอัตราด่วน</div>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+                    {presets.map(p => (
+                      <button key={p.id} onClick={() => applyPreset(p)} style={{
+                        padding: '5px 12px', borderRadius: 20, fontSize: 12, fontFamily: 'inherit', cursor: 'pointer', transition: 'all .12s',
+                        border: (form.rent == p.rent && form.deposit == p.deposit) ? '1.5px solid var(--primary)' : '1px solid var(--border)',
+                        background: (form.rent == p.rent && form.deposit == p.deposit) ? 'var(--primary-soft)' : 'var(--surface)',
+                        color: (form.rent == p.rent && form.deposit == p.deposit) ? 'var(--primary)' : 'var(--text)',
+                      }}>{p.label}: ฿{p.rent.toLocaleString()}</button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Booking status */}
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 8, color: 'var(--muted)' }}>สถานะการเข้าพัก</div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                  {[
+                    { v: 'occupied', t: 'เข้าพักทันที', s: 'เริ่มคำนวณค่าเช่าจากวันเข้า' },
+                    { v: 'booked',   t: 'จองล่วงหน้า',  s: 'ห้องแสดงสถานะ "จอง"' },
+                  ].map(o => (
+                    <button key={o.v} onClick={() => upd('bookingStatus', o.v)} style={{
+                      textAlign: 'left', padding: '10px 14px', borderRadius: 10, cursor: 'pointer', fontFamily: 'inherit', transition: 'all .15s',
+                      border: form.bookingStatus === o.v ? '2px solid var(--primary)' : '1px solid var(--border)',
+                      background: form.bookingStatus === o.v ? 'var(--primary-soft)' : 'var(--surface)',
+                    }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: form.bookingStatus === o.v ? 'var(--primary)' : 'var(--text)' }}>{o.t}</div>
+                      <div className="tu-muted" style={{ fontSize: 11.5, marginTop: 2 }}>{o.s}</div>
                     </button>
                   ))}
                 </div>
+                {form.bookingStatus === 'booked' && (
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 10 }}>
+                    <Input label="ถือจองถึงวันที่" type="date" value={form.bookingUntil} onChange={v => upd('bookingUntil', v)} />
+                    <Input label="ค่าจอง (ถ้ามี)" prefix="฿" value={form.bookingFee} onChange={v => upd('bookingFee', v)} />
+                  </div>
+                )}
               </div>
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 8, color: 'var(--muted)' }}>เลือกห้องว่าง ({availableRooms.length} ห้อง)</div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(8, 1fr)', gap: 8 }}>
-                  {availableRooms.map(r => (
-                    <button key={r.id} onClick={() => upd('room', r.id)}
-                      style={{
-                        padding: '12px 4px', borderRadius: 8,
-                        border: form.room === r.id ? '2px solid var(--primary)' : '1px solid var(--border)',
-                        background: form.room === r.id ? 'var(--primary)' : 'var(--surface)',
-                        color: form.room === r.id ? '#fff' : 'var(--text)',
-                        fontSize: 13, fontWeight: 600, cursor: 'pointer',
-                        fontVariantNumeric: 'tabular-nums', fontFamily: 'inherit',
-                        transition: 'all .15s',
-                      }}>{r.id}</button>
-                  ))}
-                </div>
-              </div>
-              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 12 }}>
+
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}>
                 <Button onClick={() => setStep(2)} disabled={!form.room}>ถัดไป →</Button>
               </div>
             </div>
           )}
+
+          {/* ── Step 2: Personal info + payment method ── */}
           {step === 2 && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-                <Input label="ชื่อ-นามสกุล" value={form.name} onChange={(v) => upd('name', v)} placeholder="คุณสมชาย ใจดี" />
-                <Input label="เลขบัตรประชาชน" value={form.idCard} onChange={(v) => upd('idCard', v)} placeholder="1-2345-67890-12-3" />
-                <Input label="เบอร์โทร" value={form.phone} onChange={(v) => upd('phone', v)} placeholder="081-234-5678" />
-                <Input label="อีเมล" value={form.email} onChange={(v) => upd('email', v)} placeholder="email@example.com" />
-                <Input label="วันที่เข้าพัก" type="date" value={form.checkIn} onChange={(v) => upd('checkIn', v)} />
-                <Input label={`เงินมัดจำ${form.type === 'monthly' ? 'ประกัน' : 'กุญแจ'}`} prefix="฿" value={form.deposit} onChange={(v) => upd('deposit', v)} />
+                <Input label="ชื่อ-นามสกุล" value={form.name} onChange={v => upd('name', v)} placeholder="คุณสมชาย ใจดี" />
+                <Input label="เลขบัตรประชาชน" value={form.idCard} onChange={v => upd('idCard', v)} placeholder="1-2345-67890-12-3" />
+                <Input label="เบอร์โทร" value={form.phone} onChange={v => upd('phone', v)} placeholder="081-234-5678" />
+                <Input label="อีเมล" value={form.email} onChange={v => upd('email', v)} placeholder="email@example.com" />
+                <Input label="วันที่เข้าพัก" type="date" value={form.checkIn} onChange={v => upd('checkIn', v)} />
               </div>
-              <Input label="หมายเหตุ" value={form.notes} onChange={(v) => upd('notes', v)} placeholder="ข้อมูลเพิ่มเติม" rows={3} />
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 12 }}>
+              <Input label="หมายเหตุ" value={form.notes} onChange={v => upd('notes', v)} placeholder="ข้อมูลเพิ่มเติม" rows={2} />
+
+              {/* Payment method */}
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 8, color: 'var(--muted)' }}>วิธีชำระเงิน</div>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  {RATE_CONFIG.paymentMethods.map(pm => (
+                    <button key={pm.id} onClick={() => upd('paymentMethod', pm.id)} style={{
+                      display: 'flex', alignItems: 'center', gap: 12, padding: '10px 14px', borderRadius: 10,
+                      fontFamily: 'inherit', cursor: 'pointer', textAlign: 'left', transition: 'all .15s',
+                      border: form.paymentMethod === pm.id ? '2px solid var(--primary)' : '1px solid var(--border)',
+                      background: form.paymentMethod === pm.id ? 'var(--primary-soft)' : 'var(--surface)',
+                    }}>
+                      <div style={{ width: 18, height: 18, borderRadius: '50%', border: `2px solid ${form.paymentMethod === pm.id ? 'var(--primary)' : 'var(--border)'}`, background: form.paymentMethod === pm.id ? 'var(--primary)' : 'transparent', flexShrink: 0 }} />
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: form.paymentMethod === pm.id ? 'var(--primary)' : 'var(--text)' }}>{pm.label}</div>
+                        {pm.detail && <div className="tu-muted" style={{ fontSize: 12 }}>{pm.detail}</div>}
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
                 <Button variant="secondary" onClick={() => setStep(1)}>← ย้อนกลับ</Button>
                 <Button onClick={() => setStep(3)} disabled={!form.name || !form.phone}>ถัดไป →</Button>
               </div>
             </div>
           )}
+
+          {/* ── Step 3: Summary + confirm ── */}
           {step === 3 && (
             <div>
               <div style={{ padding: 20, background: 'var(--surface-2)', borderRadius: 12, marginBottom: 14 }}>
                 <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 14 }}>สรุปข้อมูลการลงทะเบียน</div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, fontSize: 13 }}>
-                  <KV label="ประเภท" value={form.type === 'monthly' ? 'รายเดือน' : 'รายวัน'} />
                   <KV label="ห้อง" value={form.room} />
+                  <KV label="ประเภท" value={form.type === 'monthly' ? 'รายเดือน' : 'รายวัน'} />
+                  <KV label="ค่าเช่า" value={`฿${Number(form.rent).toLocaleString()} / ${form.type === 'monthly' ? 'เดือน' : 'คืน'}`} />
+                  <KV label="เงินมัดจำ" value={`฿${Number(form.deposit).toLocaleString()}`} />
                   <KV label="ชื่อ" value={form.name || '—'} />
                   <KV label="โทร" value={form.phone || '—'} />
                   <KV label="เข้าพัก" value={formatDate(form.checkIn)} />
-                  <KV label={`เงินมัดจำ${form.type === 'monthly' ? 'ประกัน' : 'กุญแจ'}`} value={`฿${Number(form.deposit).toLocaleString()}`} />
+                  <KV label="สถานะ" value={form.bookingStatus === 'booked' ? 'จองล่วงหน้า' : 'เข้าพักทันที'} />
+                  <KV label="ชำระผ่าน" value={RATE_CONFIG.paymentMethods.find(p => p.id === form.paymentMethod)?.label || form.paymentMethod} />
+                  {form.bookingStatus === 'booked' && Number(form.bookingFee) > 0 && (
+                    <KV label="ค่าจอง" value={`฿${Number(form.bookingFee).toLocaleString()}`} />
+                  )}
                 </div>
               </div>
               {saveError && (
@@ -3125,13 +3338,14 @@ function TenantRegister({ onDone }) {
               <div style={{ display: 'flex', justifyContent: 'space-between' }}>
                 <Button variant="secondary" onClick={() => setStep(2)} disabled={saving}>← ย้อนกลับ</Button>
                 <Button onClick={handleSubmit} icon={saving ? null : I.check} disabled={saving}>
-                  {saving ? 'กำลังบันทึก...' : 'ยืนยันการลงทะเบียน'}
+                  {saving ? 'กำลังบันทึก...' : form.bookingStatus === 'booked' ? 'ยืนยันการจอง' : 'ยืนยันการลงทะเบียน'}
                 </Button>
               </div>
             </div>
           )}
         </div>
       </div>
+      <RateSettingsModal open={showRateSettings} onClose={() => { setShowRateSettings(false); forceRender(); }} />
     </Card>
   );
 }
@@ -3219,14 +3433,18 @@ function AdminPendingTenants({ onApproved }) {
 
 function ApproveModal({ profile, onClose, onDone }) {
   const today = new Date().toISOString().slice(0, 10);
-  const [form, setForm] = React.useState({ type: 'monthly', room: '', checkIn: today, deposit: 5000 });
+  const defForm = () => { const d = RATE_CONFIG.presets.find(p => p.type === 'monthly') || { rent: 4000, deposit: 5000 }; return { type: 'monthly', room: '', rent: d.rent, checkIn: today, deposit: d.deposit, paymentMethod: RATE_CONFIG.paymentMethods[0]?.id || 'cash' }; };
+  const [form, setForm] = React.useState(defForm);
   const [saving, setSaving] = React.useState(false);
   const [error, setError] = React.useState(null);
-  const upd = (k, v) => setForm(p => ({ ...p, [k]: v, ...(k === 'type' ? { deposit: v === 'monthly' ? 5000 : 200, room: '' } : {}) }));
+  const upd = (k, v) => setForm(p => {
+    const next = { ...p, [k]: v };
+    if (k === 'type') { const d = RATE_CONFIG.presets.find(pr => pr.type === v) || (v === 'monthly' ? { rent: 4000, deposit: 5000 } : { rent: 500, deposit: 200 }); next.rent = d.rent; next.deposit = d.deposit; next.room = ''; }
+    if (k === 'room' && v) { const r = ROOMS.find(rm => rm.id === v); if (r) next.rent = r.rent; }
+    return next;
+  });
 
-  React.useEffect(() => {
-    if (profile) setForm({ type: 'monthly', room: '', checkIn: today, deposit: 5000 });
-  }, [profile?.id]);
+  React.useEffect(() => { if (profile) setForm(defForm()); }, [profile?.id]);
 
   if (!profile) return null;
 
@@ -3235,30 +3453,26 @@ function ApproveModal({ profile, onClose, onDone }) {
   const handleApprove = async () => {
     if (!form.room) return;
     setSaving(true); setError(null);
+    const pmLabel = RATE_CONFIG.paymentMethods.find(p => p.id === form.paymentMethod)?.label || form.paymentMethod;
     try {
       const { count } = await window.sb.from('tenants').select('*', { count: 'exact', head: true });
       const newId = 'T' + String((count || 0) + 1).padStart(4, '0');
       const { error: e1 } = await window.sb.from('tenants').insert({
-        id: newId,
-        name: profile.full_name || '(ไม่ระบุชื่อ)',
-        room_id: form.room, type: form.type,
-        check_in: form.checkIn,
-        deposit: Number(form.deposit),
-        status: 'occupied', profile_id: profile.id,
+        id: newId, name: profile.full_name || '(ไม่ระบุชื่อ)',
+        room_id: form.room, type: form.type, check_in: form.checkIn,
+        deposit: Number(form.deposit), status: 'occupied', profile_id: profile.id,
+        notes: `ชำระผ่าน: ${pmLabel}`,
       });
       if (e1) throw e1;
       await Promise.all([
-        window.sb.from('rooms').update({ status: 'occupied' }).eq('id', form.room),
+        window.sb.from('rooms').update({ status: 'occupied', rent: Number(form.rent) }).eq('id', form.room),
         window.sb.from('profiles').update({ room_id: form.room }).eq('id', profile.id),
       ]);
       if (window.TU?.refreshData) await window.TU.refreshData();
-      // ส่ง email ยินดีต้อนรับ
       if (profile.email) {
         await emailjs.send(EJ_SERVICE, EJ_APPROVE, {
-          to_email: profile.email,
-          to_name: profile.full_name || 'ผู้เข้าพัก',
-          room_number: form.room,
-          room_type: form.type === 'monthly' ? 'รายเดือน' : 'รายวัน',
+          to_email: profile.email, to_name: profile.full_name || 'ผู้เข้าพัก',
+          room_number: form.room, room_type: form.type === 'monthly' ? 'รายเดือน' : 'รายวัน',
           check_in_date: new Date(form.checkIn).toLocaleDateString('th-TH', { day: 'numeric', month: 'long', year: 'numeric' }),
           site_url: window.location.origin,
         });
@@ -3272,7 +3486,7 @@ function ApproveModal({ profile, onClose, onDone }) {
   };
 
   return (
-    <Modal open={!!profile} onClose={onClose} title={`อนุมัติ — ${profile.full_name || profile.email}`} width={520}
+    <Modal open={!!profile} onClose={onClose} title={`อนุมัติ — ${profile.full_name || profile.email}`} width={540}
       footer={<>
         <Button variant="secondary" onClick={onClose} disabled={saving}>ยกเลิก</Button>
         <Button onClick={handleApprove} disabled={!form.room || saving} icon={saving ? null : I.check}>
@@ -3287,46 +3501,65 @@ function ApproveModal({ profile, onClose, onDone }) {
         </div>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {/* Type */}
         <div>
           <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 8, color: 'var(--muted)' }}>ประเภทการเช่า</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
-            {[{ v: 'monthly', t: 'รายเดือน', s: '฿4,000/เดือน • มัดจำ ฿5,000' },
-              { v: 'daily', t: 'รายวัน', s: '฿500/คืน • มัดจำ ฿200' }].map(o => (
-              <button key={o.v} onClick={() => upd('type', o.v)} style={{
-                textAlign: 'left', padding: '10px 14px', borderRadius: 10, fontFamily: 'inherit', cursor: 'pointer',
-                border: form.type === o.v ? '2px solid var(--primary)' : '1px solid var(--border)',
-                background: form.type === o.v ? 'var(--primary-soft)' : 'var(--surface)',
-              }}>
-                <div style={{ fontSize: 13.5, fontWeight: 600, color: form.type === o.v ? 'var(--primary)' : 'var(--text)' }}>{o.t}</div>
-                <div className="tu-muted" style={{ fontSize: 11.5, marginTop: 2 }}>{o.s}</div>
-              </button>
-            ))}
+            {[{ v: 'monthly', t: 'รายเดือน' }, { v: 'daily', t: 'รายวัน' }].map(o => {
+              const defPr = RATE_CONFIG.presets.find(p => p.type === o.v);
+              return (
+                <button key={o.v} onClick={() => upd('type', o.v)} style={{
+                  textAlign: 'left', padding: '10px 14px', borderRadius: 10, fontFamily: 'inherit', cursor: 'pointer',
+                  border: form.type === o.v ? '2px solid var(--primary)' : '1px solid var(--border)',
+                  background: form.type === o.v ? 'var(--primary-soft)' : 'var(--surface)',
+                }}>
+                  <div style={{ fontSize: 13.5, fontWeight: 600, color: form.type === o.v ? 'var(--primary)' : 'var(--text)' }}>{o.t}</div>
+                  <div className="tu-muted" style={{ fontSize: 11.5, marginTop: 2 }}>{defPr ? `฿${defPr.rent.toLocaleString()} • มัดจำ ฿${defPr.deposit.toLocaleString()}` : '—'}</div>
+                </button>
+              );
+            })}
           </div>
         </div>
+        {/* Room */}
         <div>
-          <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 8, color: 'var(--muted)' }}>
-            เลือกห้องว่าง ({availableRooms.length} ห้อง)
-          </div>
+          <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 8, color: 'var(--muted)' }}>เลือกห้องว่าง ({availableRooms.length} ห้อง)</div>
           {availableRooms.length === 0
-            ? <div style={{ padding: '12px 14px', borderRadius: 10, background: '#fcd2d2', color: '#9b1c1c', fontSize: 13 }}>
-                ไม่มีห้องว่างประเภท{form.type === 'monthly' ? 'รายเดือน' : 'รายวัน'}
-              </div>
+            ? <div style={{ padding: '12px 14px', borderRadius: 10, background: '#fcd2d2', color: '#9b1c1c', fontSize: 13 }}>ไม่มีห้องว่างประเภท{form.type === 'monthly' ? 'รายเดือน' : 'รายวัน'}</div>
             : <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 8 }}>
                 {availableRooms.map(r => (
                   <button key={r.id} onClick={() => upd('room', r.id)} style={{
-                    padding: '10px 4px', borderRadius: 8, fontSize: 13, fontWeight: 600,
-                    fontFamily: 'inherit', cursor: 'pointer',
+                    padding: '10px 4px', borderRadius: 8, fontFamily: 'inherit', cursor: 'pointer',
                     border: form.room === r.id ? '2px solid var(--primary)' : '1px solid var(--border)',
                     background: form.room === r.id ? 'var(--primary)' : 'var(--surface)',
                     color: form.room === r.id ? '#fff' : 'var(--text)',
-                  }}>{r.id}</button>
+                  }}>
+                    <div style={{ fontSize: 12, fontWeight: 600 }}>{r.id}</div>
+                    <div style={{ fontSize: 10, opacity: .75, marginTop: 2 }}>฿{r.rent.toLocaleString()}</div>
+                  </button>
                 ))}
               </div>
           }
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-          <Input label="วันที่เข้าพัก" type="date" value={form.checkIn} onChange={v => upd('checkIn', v)} />
+        {/* Rent + deposit + date */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+          <Input label="ค่าเช่า" prefix="฿" value={form.rent} onChange={v => upd('rent', v)} />
           <Input label="เงินมัดจำ" prefix="฿" value={form.deposit} onChange={v => upd('deposit', v)} />
+          <Input label="วันที่เข้าพัก" type="date" value={form.checkIn} onChange={v => upd('checkIn', v)} />
+        </div>
+        {/* Payment method */}
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 8, color: 'var(--muted)' }}>วิธีชำระเงิน</div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            {RATE_CONFIG.paymentMethods.map(pm => (
+              <button key={pm.id} onClick={() => upd('paymentMethod', pm.id)} style={{
+                padding: '7px 14px', borderRadius: 20, fontSize: 12.5, fontFamily: 'inherit', cursor: 'pointer', transition: 'all .12s',
+                border: form.paymentMethod === pm.id ? '2px solid var(--primary)' : '1px solid var(--border)',
+                background: form.paymentMethod === pm.id ? 'var(--primary)' : 'var(--surface)',
+                color: form.paymentMethod === pm.id ? '#fff' : 'var(--text)',
+                fontWeight: form.paymentMethod === pm.id ? 600 : 400,
+              }}>{pm.label}{pm.detail ? ` — ${pm.detail}` : ''}</button>
+            ))}
+          </div>
         </div>
         {error && <div style={{ padding: '10px 14px', borderRadius: 10, background: '#fcd2d2', color: '#9b1c1c', fontSize: 13 }}>{error}</div>}
       </div>
