@@ -2435,11 +2435,25 @@ function AdminRooms({ goto }) {
     ...Object.entries(STATUS_META).map(([k, v]) => ({ value: k, label: v.th })),
   ];
 
+  const exportCSV = () => {
+    const statusTh = { vacant: 'ว่าง', booked: 'จอง', occupied: 'เข้าพัก', notice: 'แจ้งออก', maintenance: 'ปิดซ่อม', cleaning: 'ทำความสะอาด' };
+    const rows = [['รหัสห้อง', 'ชั้น', 'หมายเลข', 'ประเภท', 'สถานะ', 'ค่าเช่า (฿)', 'ขนาด (ตร.ม.)', 'เตียง', 'ผู้เข้าพัก']];
+    ROOMS.forEach(r => {
+      const t = TENANTS.find(t => t.room === r.id);
+      rows.push([r.id, r.floor, r.number || '', r.type === 'monthly' ? 'รายเดือน' : 'รายวัน', statusTh[r.status] || r.status, r.rent, r.size || '', r.bed || '', t ? t.name : '']);
+    });
+    const csv = '﻿' + rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
+    a.download = `room-map-${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+  };
+
   return (
     <div className="tu-page">
       <PageHeader title="ผังห้อง" subtitle="Room Map — ดูสถานะและจัดการห้องทั้งหมด"
         actions={<>
-          <Button variant="secondary" size="sm" icon={I.download}>ส่งออกผัง</Button>
+          <Button variant="secondary" size="sm" icon={I.download} onClick={exportCSV}>ส่งออกผัง</Button>
           <Button size="sm" icon={I.plus} onClick={() => setShowAddRoom(true)}>เพิ่มห้องใหม่</Button>
         </>}
       />
