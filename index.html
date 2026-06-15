@@ -7061,10 +7061,15 @@ function AdminBookings() {
       setRecentOut([]);
       return;
     }
+    const todayStr = new Date().toISOString().slice(0, 10);
     const [r1, r2, r3] = await Promise.all([
       window.sb.from('tenants').select('*').eq('status', 'booked').order('check_in'),
-      window.sb.from('tenants').select('*').eq('status', 'occupied').eq('type', 'daily').order('check_in'),
-      window.sb.from('tenants').select('*').eq('status', 'checked_out').order('id', { ascending: false }).limit(30),
+      // Daily occupied: status=occupied AND (no check_out OR check_out >= today)
+      window.sb.from('tenants').select('*').eq('status', 'occupied').eq('type', 'daily')
+        .or(`check_out.is.null,check_out.gte.${todayStr}`).order('check_in'),
+      // Checked out: has check_out date in the past (no status filter needed)
+      window.sb.from('tenants').select('*').not('check_out', 'is', null)
+        .lt('check_out', todayStr).order('check_out', { ascending: false }).limit(30),
     ]);
     setBooked(r1.data || []);
     setOccDaily(r2.data || []);
@@ -7362,7 +7367,9 @@ function DailyCheckoutModal({ tenant, onClose, onDone }) {
         } catch (invE) {
           setInvErr('ไม่สามารถออกใบแจ้งหนี้ได้: ' + (invE.message || invE));
         }
-        const { error: upErr } = await window.sb.from('tenants').update({ status: 'checked_out', check_out: checkoutDate }).eq('id', tenant.id);
+        // Don't set status='checked_out' — room_status enum doesn't have that value
+        // Setting check_out date is enough to remove from active lists
+        const { error: upErr } = await window.sb.from('tenants').update({ check_out: checkoutDate }).eq('id', tenant.id);
         if (upErr) throw upErr;
         await window.sb.from('rooms').update({ status: 'cleaning' }).eq('id', roomKey);
         if (window.TU?.refreshData) await window.TU.refreshData();
