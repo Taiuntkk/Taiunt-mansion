@@ -3653,24 +3653,38 @@ function AdminPendingTenants({ onApproved }) {
     }
   }, []);
 
+  const [rejectError, setRejectError] = React.useState('');
+
   React.useEffect(() => { load(); }, []);
 
   const doReject = async (profile) => {
+    setRejectError('');
     const now = new Date().toISOString();
-    // Try with rejected_at first; fall back if column doesn't exist yet
-    let { error } = await window.sb.from('profiles')
+    // Use .select('id') so Supabase returns the updated row — empty array means RLS blocked it
+    let { data, error } = await window.sb.from('profiles')
       .update({ role: 'rejected', rejected_at: now })
-      .eq('id', profile.id);
+      .eq('id', profile.id)
+      .select('id');
     if (error) {
-      ({ error } = await window.sb.from('profiles')
+      // Fallback: try without rejected_at if column missing
+      ({ data, error } = await window.sb.from('profiles')
         .update({ role: 'rejected' })
-        .eq('id', profile.id));
+        .eq('id', profile.id)
+        .select('id'));
     }
-    if (!error) {
-      setPending(p => p.filter(x => x.id !== profile.id));
-      setRejected(r => [{ ...profile, role: 'rejected', rejected_at: now }, ...r]);
-      if (onApproved) onApproved();
+    if (error) {
+      setRejectError('เกิดข้อผิดพลาด: ' + error.message);
+      setRejectTarget(null);
+      return;
     }
+    if (!data || data.length === 0) {
+      setRejectError('ไม่มีสิทธิ์ปฏิเสธ — กรุณาเพิ่ม RLS policy ใน Supabase ก่อน (ดูคำแนะนำด้านบน)');
+      setRejectTarget(null);
+      return;
+    }
+    setPending(p => p.filter(x => x.id !== profile.id));
+    setRejected(r => [{ ...profile, role: 'rejected', rejected_at: now }, ...r]);
+    if (onApproved) onApproved();
     setRejectTarget(null);
   };
 
@@ -3679,6 +3693,22 @@ function AdminPendingTenants({ onApproved }) {
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {rejectError && (
+        <div style={{ padding: '12px 16px', background: '#fee2e2', borderRadius: 10, border: '1px solid #fca5a5', fontSize: 13 }}>
+          <div style={{ fontWeight: 600, color: '#991b1b', marginBottom: 4 }}>ปฏิเสธไม่สำเร็จ</div>
+          <div style={{ color: '#7f1d1d' }}>{rejectError}</div>
+          <div style={{ marginTop: 8, fontSize: 12, color: '#9b1c1c' }}>
+            แก้ไข: รัน SQL นี้ใน Supabase SQL Editor →
+            <code style={{ display: 'block', marginTop: 4, padding: '6px 8px', background: '#fee2e2', borderRadius: 6, fontFamily: 'monospace', whiteSpace: 'pre-wrap' }}>
+{`alter table profiles add column if not exists rejected_at timestamptz;
+
+create policy "Admin can update any profile"
+  on profiles for update
+  using (is_admin()) with check (is_admin());`}
+            </code>
+          </div>
+        </div>
+      )}
       {/* Toggle rejection log */}
       <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
         <button onClick={() => setShowLog(v => !v)} style={{
@@ -3924,7 +3954,7 @@ function RejectModal({ profile, onClose, onConfirm }) {
       {profile.email
         ? <div style={{ padding: '12px 16px', borderRadius: 12, background: 'var(--surface-2)', fontSize: 13, display: 'flex', gap: 10, alignItems: 'flex-start' }}>
             <span style={{ fontSize: 18 }}>📧</span>
-            <span>ระบบจะส่ง email แจ้งผลไปยัง <strong>{profile.email}</strong> อัตโนมัติ แล้วลบบัญชีออกจากระบบ</span>
+            <span>ระบบจะส่ง email แจ้งผลไปยัง <strong>{profile.email}</strong> อัตโนมัติ และบันทึกเป็นประวัติปฏิเสธ</span>
           </div>
         : <div style={{ padding: '10px 14px', borderRadius: 10, background: '#fef3c7', color: '#92400e', fontSize: 13 }}>
             ผู้สมัครนี้ไม่มีอีเมล — จะปฏิเสธโดยไม่ส่ง email
