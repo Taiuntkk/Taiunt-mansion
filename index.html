@@ -3255,7 +3255,7 @@ function TenantRegister({ onDone }) {
   const today = new Date().toISOString().slice(0, 10);
   const blankForm = () => ({
     type: 'monthly', name: '', idCard: '', phone: '', email: '',
-    room: '', rent: 4000, checkIn: today, deposit: 5000, notes: '',
+    room: '', rent: 4000, checkIn: today, checkOut: '', deposit: 5000, notes: '',
     bookingStatus: 'occupied', bookingFee: 0, bookingUntil: '',
     bookingDays: 7,
     contractMonths: 1,
@@ -3268,6 +3268,7 @@ function TenantRegister({ onDone }) {
   const [saveError, setSaveError] = React.useState(null);
   const [showRateSettings, setShowRateSettings] = React.useState(false);
   const [, forceRender] = React.useReducer(x => x + 1, 0);
+  const [isTemp, setIsTemp] = React.useState(false);
 
   const upd = (k, v) => setForm(p => {
     const next = { ...p, [k]: v };
@@ -3286,18 +3287,21 @@ function TenantRegister({ onDone }) {
     setSaving(true); setSaveError(null);
     const roomStatus = form.bookingStatus === 'booked' ? 'booked' : 'occupied';
     const pmLabel = RATE_CONFIG.paymentMethods.find(p => p.id === form.paymentMethod)?.label || form.paymentMethod;
-    const noteParts = [form.notes, `ชำระผ่าน: ${pmLabel}`, form.bookingStatus === 'booked' && Number(form.bookingFee) > 0 ? `ค่าจอง: ฿${Number(form.bookingFee).toLocaleString()}` : null].filter(Boolean);
+    const noteParts = [isTemp ? 'ผู้เช่าชั่วคราว (walk-in)' : null, form.notes, !isTemp ? `ชำระผ่าน: ${pmLabel}` : null, !isTemp && form.bookingStatus === 'booked' && Number(form.bookingFee) > 0 ? `ค่าจอง: ฿${Number(form.bookingFee).toLocaleString()}` : null].filter(Boolean);
     const addMonths = (dateStr, n) => { const d = new Date(dateStr); d.setMonth(d.getMonth() + n); return d.toISOString().slice(0,10); };
-    const bookingUntil = form.bookingStatus === 'booked' ? (() => { const d = new Date(); d.setDate(d.getDate() + Number(form.bookingDays || 7)); return d.toISOString().slice(0,10); })() : null;
-    const checkOut = form.type === 'monthly' && form.contractMonths ? addMonths(form.checkIn, form.contractMonths) : null;
+    const bookingUntil = !isTemp && form.bookingStatus === 'booked' ? (() => { const d = new Date(); d.setDate(d.getDate() + Number(form.bookingDays || 7)); return d.toISOString().slice(0,10); })() : null;
+    const checkOut = isTemp
+      ? (form.checkOut || null)
+      : (form.type === 'monthly' && form.contractMonths ? addMonths(form.checkIn, form.contractMonths) : null);
     try {
       const { count } = await window.sb.from('tenants').select('*', { count: 'exact', head: true });
       const newId = 'T' + String((count || 0) + 1).padStart(4, '0');
       const insertData = {
-        id: newId, name: form.name, phone: form.phone, id_card: form.idCard,
+        id: newId, name: form.name, phone: form.phone,
+        ...(!isTemp && form.idCard ? { id_card: form.idCard } : {}),
         room_id: form.room, type: form.type, check_in: form.checkIn,
         ...(checkOut ? { check_out: checkOut } : {}),
-        deposit: Number(form.deposit), status: roomStatus,
+        deposit: Number(form.deposit), status: isTemp ? 'occupied' : roomStatus,
       };
       const noteText = noteParts.join(' | ') || null;
       // Try with notes first; if column missing, retry without
@@ -3306,7 +3310,7 @@ function TenantRegister({ onDone }) {
         ({ error } = await window.sb.from('tenants').insert(insertData));
       }
       if (error) throw error;
-      await window.sb.from('rooms').update({ status: roomStatus, rent: Number(form.rent) }).eq('id', form.room);
+      await window.sb.from('rooms').update({ status: isTemp ? 'occupied' : roomStatus, rent: Number(form.rent) }).eq('id', form.room);
       if (window.TU?.refreshData) await window.TU.refreshData();
       if (bookingUntil) setForm(f => ({ ...f, bookingUntil }));
       setSubmitted(true);
@@ -3334,7 +3338,7 @@ function TenantRegister({ onDone }) {
           คุณ{form.name || 'ผู้เข้าพัก'} • ห้อง {form.room || '—'} • ค่าเช่า ฿{Number(form.rent).toLocaleString()}
         </div>
         <div style={{ marginTop: 24, display: 'flex', gap: 8, justifyContent: 'center', flexWrap: 'wrap' }}>
-          <Button variant="secondary" onClick={() => openContractWindow(form)} icon={I.download}>สร้างสัญญาเช่า</Button>
+          {!isTemp && <Button variant="secondary" onClick={() => openContractWindow(form)} icon={I.download}>สร้างสัญญาเช่า</Button>}
           <Button variant="secondary" onClick={() => { setSubmitted(false); setStep(1); setForm(blankForm()); }}>ลงทะเบียนคนใหม่</Button>
           <Button onClick={onDone}>ไปทะเบียนผู้เข้าพัก</Button>
         </div>
@@ -3344,11 +3348,27 @@ function TenantRegister({ onDone }) {
 
   return (
     <Card padding={28}>
+      {/* Mode toggle */}
+      <div style={{ display: 'flex', gap: 0, marginBottom: 24, border: '1px solid var(--border)', borderRadius: 10, overflow: 'hidden', width: 'fit-content' }}>
+        {[{ v: false, t: 'เข้าพักปกติ' }, { v: true, t: 'ผู้เช่าชั่วคราว (walk-in)' }].map(o => (
+          <button key={String(o.v)} onClick={() => { setIsTemp(o.v); setStep(1); setForm(blankForm()); }} style={{
+            padding: '8px 20px', fontSize: 13, fontFamily: 'inherit', cursor: 'pointer', border: 0,
+            background: isTemp === o.v ? 'var(--primary)' : 'var(--surface)',
+            color: isTemp === o.v ? '#fff' : 'var(--muted)',
+            fontWeight: isTemp === o.v ? 600 : 400, transition: 'all .15s',
+          }}>{o.t}</button>
+        ))}
+      </div>
+      {isTemp && (
+        <div style={{ marginBottom: 18, padding: '10px 14px', background: '#fef9c3', borderRadius: 10, border: '1px solid #fde047', fontSize: 12.5 }}>
+          โหมดนี้สำหรับผู้เช่าชั่วคราว (walk-in) ไม่ต้องสมัครบัญชี — admin ผูกชื่อ-เบอร์โทรได้เลย
+        </div>
+      )}
       <div style={{ display: 'grid', gridTemplateColumns: '220px 1fr', gap: 32 }}>
         {/* Steps sidebar */}
         <div>
           <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 14 }}>ขั้นตอน</div>
-          {['ห้องและราคา', 'ข้อมูล & ชำระเงิน', 'ยืนยันและบันทึก'].map((s, i) => (
+          {(isTemp ? ['ห้องและราคา', 'ข้อมูลผู้เช่าชั่วคราว'] : ['ห้องและราคา', 'ข้อมูล & ชำระเงิน', 'ยืนยันและบันทึก']).map((s, i) => (
             <div key={i} style={{ display: 'flex', gap: 12, alignItems: 'flex-start', marginBottom: 16 }}>
               <div style={{
                 width: 26, height: 26, borderRadius: '50%',
@@ -3440,8 +3460,8 @@ function TenantRegister({ onDone }) {
                 </div>
               )}
 
-              {/* Booking status */}
-              <div>
+              {/* Booking status — hidden in temp mode */}
+              {!isTemp && <div>
                 <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 8, color: 'var(--muted)' }}>สถานะการเข้าพัก</div>
                 <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
                   {[
@@ -3475,7 +3495,7 @@ function TenantRegister({ onDone }) {
                   </div>
                 )}
 
-              {/* Contract duration — monthly only */}
+              {/* Contract duration — monthly only, not temp */}
               {form.type === 'monthly' && (
                 <div>
                   <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 8, color: 'var(--muted)' }}>ระยะเวลาสัญญา</div>
@@ -3492,7 +3512,7 @@ function TenantRegister({ onDone }) {
                   </div>
                 </div>
               )}
-              </div>
+              </div>}
 
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 4 }}>
                 <Button onClick={() => setStep(2)} disabled={!form.room}>ถัดไป →</Button>
@@ -3500,8 +3520,33 @@ function TenantRegister({ onDone }) {
             </div>
           )}
 
+          {/* ── Step 2 (temp/walk-in mode): simplified personal info ── */}
+          {step === 2 && isTemp && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                <Input label="ชื่อ-นามสกุล *" value={form.name} onChange={v => upd('name', v)} placeholder="คุณสมชาย ใจดี" />
+                <Input label="เบอร์โทร *" value={form.phone} onChange={v => upd('phone', v)} placeholder="081-234-5678" />
+                <Input label="วันที่เข้าพัก" type="date" value={form.checkIn} onChange={v => upd('checkIn', v)} />
+                <Input label="วันที่ออก (ถ้าทราบ)" type="date" value={form.checkOut || ''} onChange={v => upd('checkOut', v)} />
+              </div>
+              <Input label="หมายเหตุ" value={form.notes} onChange={v => upd('notes', v)} placeholder="ข้อมูลเพิ่มเติม เช่น จำนวนคน สัตว์เลี้ยง ฯลฯ" rows={2} />
+              <div style={{ padding: 14, background: 'var(--surface-2)', borderRadius: 10, fontSize: 13 }}>
+                <div style={{ fontWeight: 600, marginBottom: 6 }}>สรุปการบันทึก</div>
+                <div className="tu-muted">ห้อง {form.room || '—'} • ค่าเช่า ฿{Number(form.rent).toLocaleString()} • เข้าพัก {form.checkIn}</div>
+                <div className="tu-muted">ชื่อ: {form.name || '—'} • โทร: {form.phone || '—'}</div>
+              </div>
+              {saveError && <div style={{ fontSize: 12.5, color: '#dc2626', padding: '8px 12px', background: '#fee2e2', borderRadius: 8 }}>{saveError}</div>}
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 4 }}>
+                <Button variant="secondary" onClick={() => setStep(1)}>← ย้อนกลับ</Button>
+                <Button onClick={handleSubmit} disabled={saving || !form.name || !form.phone}>
+                  {saving ? 'กำลังบันทึก…' : 'บันทึกผู้เช่าชั่วคราว'}
+                </Button>
+              </div>
+            </div>
+          )}
+
           {/* ── Step 2: Personal info + payment method ── */}
-          {step === 2 && (
+          {step === 2 && !isTemp && (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
                 <Input label="ชื่อ-นามสกุล" value={form.name} onChange={v => upd('name', v)} placeholder="คุณสมชาย ใจดี" />
@@ -3540,8 +3585,8 @@ function TenantRegister({ onDone }) {
             </div>
           )}
 
-          {/* ── Step 3: Summary + confirm ── */}
-          {step === 3 && (
+          {/* ── Step 3: Summary + confirm (normal mode only) ── */}
+          {step === 3 && !isTemp && (
             <div>
               <div style={{ padding: 20, background: 'var(--surface-2)', borderRadius: 12, marginBottom: 14 }}>
                 <div style={{ fontSize: 14, fontWeight: 600, marginBottom: 14 }}>สรุปข้อมูลการลงทะเบียน</div>
@@ -3587,47 +3632,60 @@ function TenantRegister({ onDone }) {
 // ─── Pending tenant approvals ────────────────────────────────────────────
 function AdminPendingTenants({ onApproved }) {
   const [pending, setPending] = React.useState(null);
+  const [rejected, setRejected] = React.useState([]);
   const [selected, setSelected] = React.useState(null);
   const [rejectTarget, setRejectTarget] = React.useState(null);
+  const [showLog, setShowLog] = React.useState(false);
 
   const load = React.useCallback(async () => {
     if (!window.sb) { setPending([]); return; }
-    const { data } = await window.sb.from('profiles')
-      .select('*').eq('role', 'tenant').is('room_id', null).order('created_at');
-    setPending(data || []);
+    const [{ data: pend }, { data: rej }] = await Promise.all([
+      window.sb.from('profiles').select('*').eq('role', 'tenant').is('room_id', null).order('created_at'),
+      window.sb.from('profiles').select('*').eq('role', 'rejected').order('rejected_at', { ascending: false }).limit(50),
+    ]);
+    setPending(pend || []);
+    setRejected(rej || []);
   }, []);
 
   React.useEffect(() => { load(); }, []);
 
   const doReject = async (profile) => {
-    await window.sb.from('profiles').delete().eq('id', profile.id);
-    setPending(p => p.filter(x => x.id !== profile.id));
-    if (onApproved) onApproved();
+    // Mark as rejected (keep record for log) instead of hard-delete
+    const { error } = await window.sb.from('profiles')
+      .update({ role: 'rejected', rejected_at: new Date().toISOString() })
+      .eq('id', profile.id);
+    if (!error) {
+      setPending(p => p.filter(x => x.id !== profile.id));
+      setRejected(r => [{ ...profile, role: 'rejected', rejected_at: new Date().toISOString() }, ...r]);
+      if (onApproved) onApproved();
+    }
     setRejectTarget(null);
   };
 
-  if (pending === null) return (
-    <Card padding={32} style={{ textAlign: 'center' }}>
-      <div className="tu-muted">กำลังโหลด...</div>
-    </Card>
-  );
-
-  if (!window.sb) return (
-    <Card padding={32} style={{ textAlign: 'center' }}>
-      <div className="tu-muted" style={{ fontSize: 13 }}>ฟีเจอร์นี้ใช้งานได้เมื่อเชื่อมต่อ Supabase แล้วเท่านั้น</div>
-    </Card>
-  );
-
-  if (pending.length === 0) return (
-    <Card padding={48} style={{ textAlign: 'center' }}>
-      <div style={{ fontSize: 36, marginBottom: 12 }}>✅</div>
-      <div style={{ fontSize: 16, fontWeight: 600 }}>ไม่มีผู้ลงทะเบียนรอการอนุมัติ</div>
-      <div className="tu-muted" style={{ fontSize: 13, marginTop: 6 }}>เมื่อผู้เข้าพักสมัครผ่านหน้าเว็บ จะปรากฏที่นี่</div>
-    </Card>
-  );
+  if (pending === null) return <Card padding={32} style={{ textAlign: 'center' }}><div className="tu-muted">กำลังโหลด...</div></Card>;
+  if (!window.sb) return <Card padding={32} style={{ textAlign: 'center' }}><div className="tu-muted" style={{ fontSize: 13 }}>ฟีเจอร์นี้ใช้งานได้เมื่อเชื่อมต่อ Supabase แล้วเท่านั้น</div></Card>;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {/* Toggle rejection log */}
+      <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+        <button onClick={() => setShowLog(v => !v)} style={{
+          fontSize: 12.5, color: 'var(--muted)', background: 'var(--surface-2)',
+          border: '1px solid var(--border)', borderRadius: 8, padding: '5px 12px', cursor: 'pointer', fontFamily: 'inherit',
+        }}>
+          {showLog ? '▲ ซ่อนประวัติปฏิเสธ' : `▼ ดูประวัติปฏิเสธ (${rejected.length} รายการ)`}
+        </button>
+      </div>
+
+      {pending.length === 0 && !showLog && (
+        <Card padding={48} style={{ textAlign: 'center' }}>
+          <div style={{ fontSize: 36, marginBottom: 12 }}>✅</div>
+          <div style={{ fontSize: 16, fontWeight: 600 }}>ไม่มีผู้ลงทะเบียนรอการอนุมัติ</div>
+          <div className="tu-muted" style={{ fontSize: 13, marginTop: 6 }}>เมื่อผู้เข้าพักสมัครผ่านหน้าเว็บ จะปรากฏที่นี่</div>
+        </Card>
+      )}
+
+      {/* Pending approvals */}
       {pending.map(p => (
         <Card key={p.id} padding={16}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
@@ -3647,20 +3705,37 @@ function AdminPendingTenants({ onApproved }) {
           </div>
         </Card>
       ))}
-      <ApproveModal
-        profile={selected}
-        onClose={() => setSelected(null)}
-        onDone={() => {
-          setPending(p => p.filter(x => x.id !== selected?.id));
-          setSelected(null);
-          if (onApproved) onApproved();
-        }}
-      />
-      <RejectModal
-        profile={rejectTarget}
-        onClose={() => setRejectTarget(null)}
-        onConfirm={() => doReject(rejectTarget)}
-      />
+
+      {/* Rejection log */}
+      {showLog && (
+        <Card padding={0}>
+          <div style={{ padding: '12px 16px', borderBottom: '1px solid var(--border)', fontWeight: 600, fontSize: 13, display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ color: '#b13e3e' }}>✕</span> ประวัติการปฏิเสธ ({rejected.length} รายการ)
+          </div>
+          {rejected.length === 0
+            ? <div style={{ padding: 24, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>ยังไม่มีประวัติการปฏิเสธ</div>
+            : <table className="tu-table">
+                <thead><tr><th>ชื่อ</th><th>อีเมล</th><th>โทร</th><th>ปฏิเสธเมื่อ</th></tr></thead>
+                <tbody>
+                  {rejected.map(r => (
+                    <tr key={r.id}>
+                      <td style={{ fontWeight: 500 }}>{r.full_name || '(ไม่ระบุ)'}</td>
+                      <td className="tu-muted" style={{ fontSize: 12 }}>{r.email || '—'}</td>
+                      <td className="tu-muted" style={{ fontSize: 12 }}>{r.phone || '—'}</td>
+                      <td className="tu-muted" style={{ fontSize: 12 }}>
+                        {r.rejected_at ? new Date(r.rejected_at).toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+          }
+        </Card>
+      )}
+
+      <ApproveModal profile={selected} onClose={() => setSelected(null)}
+        onDone={() => { setPending(p => p.filter(x => x.id !== selected?.id)); setSelected(null); if (onApproved) onApproved(); }} />
+      <RejectModal profile={rejectTarget} onClose={() => setRejectTarget(null)} onConfirm={() => doReject(rejectTarget)} />
     </div>
   );
 }
@@ -6992,12 +7067,32 @@ function SignUpForm({ onSubmit }) {
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState('');
   const [done, setDone] = React.useState(false);
+  const [resetSent, setResetSent] = React.useState(false);
+  const [dupState, setDupState] = React.useState(null); // null | 'duplicate' | 'rejected'
   const upd = (k, v) => setForm((p) => ({ ...p, [k]: v }));
+
+  const doResetPassword = async () => {
+    setBusy(true); setErr('');
+    const { error } = await window.sb.auth.resetPasswordForEmail(form.email, {
+      redirectTo: window.location.origin + window.location.pathname,
+    });
+    setBusy(false);
+    if (!error) setResetSent(true);
+    else setErr('ไม่สามารถส่งอีเมลได้: ' + error.message);
+  };
 
   const doSignup = async () => {
     if (!connected) { onSubmit(); return; }
-    setBusy(true);
-    setErr('');
+    setBusy(true); setErr(''); setDupState(null);
+
+    // Check for rejected profile with this email
+    const { data: rejData } = await window.sb.from('profiles').select('id').eq('email', form.email).eq('role', 'rejected').maybeSingle();
+    if (rejData) { setBusy(false); setDupState('rejected'); return; }
+
+    // Check for existing non-rejected profile
+    const { data: existData } = await window.sb.from('profiles').select('id').eq('email', form.email).neq('role', 'rejected').maybeSingle();
+    if (existData) { setBusy(false); setDupState('duplicate'); return; }
+
     const { data, error } = await window.sb.auth.signUp({
       email: form.email,
       password: form.pw,
@@ -7005,11 +7100,14 @@ function SignUpForm({ onSubmit }) {
     });
     if (error) {
       setBusy(false);
-      setErr(error.message);
+      const msg = error.message || '';
+      if (msg.toLowerCase().includes('already registered') || msg.toLowerCase().includes('already exists')) {
+        setDupState('duplicate');
+      } else {
+        setErr(msg);
+      }
       return;
     }
-    // Create the app-side profile (role defaults to tenant; an admin links it
-    // to a room from the Tenants screen — see database/SETUP.md).
     if (data.user) {
       await window.sb.from('profiles').insert({
         id: data.user.id, role: 'tenant', full_name: form.name,
@@ -7023,13 +7121,63 @@ function SignUpForm({ onSubmit }) {
   if (connected && done) {
     return (
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14, textAlign: 'center', padding: '20px 0' }}>
-        <div style={{ fontSize: 22, fontWeight: 700 }}>สมัครสมาชิกสำเร็จ 🎉</div>
+        <div style={{ fontSize: 22, fontWeight: 700 }}>สมัครสมาชิกสำเร็จ</div>
         <div className="tu-muted" style={{ fontSize: 13.5, lineHeight: 1.7 }}>
           กรุณายืนยันอีเมลของคุณ (ถ้าระบบกำหนดไว้) จากนั้นรอผู้ดูแลหอผูกบัญชีของคุณกับห้องพัก<br />
           คุณจะเข้าสู่ระบบได้ทันทีที่ผู้ดูแลดำเนินการเสร็จ
         </div>
-      </div>);
+      </div>
+    );
+  }
 
+  if (resetSent) {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14, textAlign: 'center', padding: '20px 0' }}>
+        <div style={{ fontSize: 22, fontWeight: 700 }}>ส่งอีเมลแล้ว</div>
+        <div className="tu-muted" style={{ fontSize: 13.5, lineHeight: 1.7 }}>
+          ระบบส่งลิงก์รีเซ็ตรหัสผ่านไปที่ <strong>{form.email}</strong> แล้ว<br />
+          กรุณาตรวจสอบกล่องขาเข้า (รวมถึงโฟลเดอร์ spam) จากนั้นกดลิงก์เพื่อตั้งรหัสผ่านใหม่และกลับเข้าสู่ระบบ
+        </div>
+      </div>
+    );
+  }
+
+  if (dupState === 'rejected') {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div>
+          <div style={{ fontSize: 20, fontWeight: 700 }}>ไม่สามารถลงทะเบียนได้</div>
+          <div className="tu-muted" style={{ fontSize: 13, marginTop: 4 }}>อีเมล <strong>{form.email}</strong> ถูกปฏิเสธโดยผู้ดูแลระบบ</div>
+        </div>
+        <div style={{ padding: 14, background: '#fee2e2', borderRadius: 10, border: '1px solid #fca5a5', fontSize: 13, lineHeight: 1.6 }}>
+          หากคุณเชื่อว่าเกิดข้อผิดพลาด กรุณาติดต่อผู้ดูแลหอพักโดยตรง
+        </div>
+        <Button fullWidth variant="secondary" onClick={() => { setDupState(null); setForm(f => ({ ...f, email: '' })); }}>
+          ลองใช้อีเมลอื่น
+        </Button>
+      </div>
+    );
+  }
+
+  if (dupState === 'duplicate') {
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div>
+          <div style={{ fontSize: 20, fontWeight: 700 }}>อีเมลนี้มีในระบบแล้ว</div>
+          <div className="tu-muted" style={{ fontSize: 13, marginTop: 4 }}>อีเมล <strong>{form.email}</strong> ถูกลงทะเบียนในระบบแล้ว</div>
+        </div>
+        <div style={{ padding: 14, background: '#fef9c3', borderRadius: 10, border: '1px solid #fde047', fontSize: 13, lineHeight: 1.6 }}>
+          หากคุณลืมรหัสผ่าน กรุณากดปุ่ม "ลืมรหัสผ่าน" ระบบจะส่งลิงก์กลับเข้าสู่ระบบไปที่อีเมลของคุณเท่านั้น
+        </div>
+        {err && <div style={{ fontSize: 12.5, color: '#dc2626' }}>{err}</div>}
+        <Button fullWidth onClick={doResetPassword} disabled={busy}>
+          {busy ? 'กำลังส่งอีเมล…' : 'ลืมรหัสผ่าน — ส่งลิงก์กลับเข้าระบบ'}
+        </Button>
+        <Button fullWidth variant="secondary" onClick={() => { setDupState(null); setForm(f => ({ ...f, email: '' })); }}>
+          ลงทะเบียนด้วยอีเมลอื่น
+        </Button>
+      </div>
+    );
   }
 
   return (
@@ -7052,8 +7200,8 @@ function SignUpForm({ onSubmit }) {
       <Button fullWidth size="lg" onClick={doSignup} disabled={!form.agree || busy || (connected && (!form.name || !form.email || form.pw.length < 8))}>
         {busy ? 'กำลังสมัครสมาชิก…' : 'สมัครสมาชิก'}
       </Button>
-    </div>);
-
+    </div>
+  );
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────
