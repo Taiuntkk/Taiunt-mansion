@@ -7047,7 +7047,7 @@ async function createInvoiceInSB({ tenantId, roomId, tenantName, type, period, i
 function AdminBookings() {
   const [tab, setTab] = React.useState('booked');
   const [booked, setBooked] = React.useState(null);
-  const [occ, setOcc] = React.useState(null);
+  const [occDaily, setOccDaily] = React.useState(null);
   const [recentOut, setRecentOut] = React.useState([]);
   const [checkinTarget, setCheckinTarget] = React.useState(null);
   const [checkoutTarget, setCheckoutTarget] = React.useState(null);
@@ -7057,26 +7057,32 @@ function AdminBookings() {
   const load = React.useCallback(async () => {
     if (!window.sb) {
       setBooked(TENANTS.filter(t => t.status === 'booked'));
-      setOcc(TENANTS.filter(t => t.status === 'occupied'));
+      setOccDaily(TENANTS.filter(t => t.status === 'occupied' && t.type === 'daily'));
       setRecentOut([]);
       return;
     }
     const [r1, r2, r3] = await Promise.all([
       window.sb.from('tenants').select('*').eq('status', 'booked').order('check_in'),
-      window.sb.from('tenants').select('*').eq('status', 'occupied').order('check_in'),
+      window.sb.from('tenants').select('*').eq('status', 'occupied').eq('type', 'daily').order('check_in'),
       window.sb.from('tenants').select('*').eq('status', 'checked_out').order('id', { ascending: false }).limit(30),
     ]);
     setBooked(r1.data || []);
-    setOcc(r2.data || []);
+    setOccDaily(r2.data || []);
     setRecentOut(r3.data || []);
   }, []);
 
   React.useEffect(() => { load(); }, [load]);
-
   const afterAction = () => { load(); if (window.TU?.refreshData) window.TU.refreshData(); };
 
-  const curList = tab === 'booked' ? (booked || []) : tab === 'occupied' ? (occ || []) : recentOut;
-  const loading = (tab === 'booked' && booked === null) || (tab === 'occupied' && occ === null);
+  const today = new Date().toISOString().slice(0, 10);
+  const diffDays = (d1, d2) => {
+    const p = s => { const [y,m,d] = (s||'').slice(0,10).split('-').map(Number); return Date.UTC(y,m-1,d); };
+    return Math.round((p(d2) - p(d1)) / 86400000);
+  };
+
+  // Which list to show based on tab
+  const curList = tab === 'booked' ? (booked || []) : tab === 'daily' ? (occDaily || []) : recentOut;
+  const loading = (tab === 'booked' && booked === null) || (tab === 'daily' && occDaily === null);
 
   return (
     <div className="tu-page">
@@ -7084,66 +7090,131 @@ function AdminBookings() {
         actions={<Button icon={I.plus} size="sm" onClick={() => setShowCreate(true)}>จองใหม่</Button>}
       />
 
-      <div style={{ padding: '14px 16px', background: 'var(--surface-2)', borderRadius: 12, fontSize: 13, lineHeight: 1.7, color: 'var(--muted)' }}>
-        <strong style={{ color: 'var(--text)' }}>ขบวนการจอง:</strong>{' '}
-        <span>① สร้างการจอง → ห้องเป็น "จอง"</span>{' · '}
-        <span>② เช็คอิน → ห้องเป็น "เข้าพัก" + ออกใบแจ้งหนี้เดือนแรก (รายเดือน)</span>{' · '}
-        <span>③ รายวัน: ต่อสัญญา หรือ เช็คเอ้าท์ + ออกใบแจ้งหนี้</span>
+      {/* Flow guide */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 10 }}>
+        {[
+          { n: '①', title: 'จองห้อง', desc: 'เลือกห้อง + กำหนดวันเข้า + เงินมัดจำ', color: '#f59e0b' },
+          { n: '②', title: 'เช็คอิน', desc: 'ยืนยันรับมัดจำ → ออกใบแจ้งหนี้เดือนแรก (รายเดือน)', color: 'var(--primary)' },
+          { n: '③', title: 'รายวัน: ต่อสัญญา / เช็คเอ้าท์', desc: 'ต่อวัน → ออกใบแจ้งหนี้เพิ่ม | เช็คเอ้าท์ → หักมัดจำ', color: '#6366f1' },
+        ].map(s => (
+          <div key={s.n} style={{ padding: '12px 14px', background: 'var(--surface-2)', borderRadius: 10, display: 'flex', gap: 12, alignItems: 'flex-start' }}>
+            <div style={{ width: 28, height: 28, borderRadius: '50%', background: s.color, color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, fontSize: 12, flexShrink: 0 }}>{s.n}</div>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600 }}>{s.title}</div>
+              <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 2, lineHeight: 1.5 }}>{s.desc}</div>
+            </div>
+          </div>
+        ))}
       </div>
 
       <Tabs value={tab} onChange={setTab} options={[
-        { value: 'booked', label: 'รอเช็คอิน', count: booked?.length || undefined },
-        { value: 'occupied', label: 'กำลังเข้าพัก', count: occ?.length || undefined },
+        { value: 'booked',  label: 'รอเช็คอิน', count: booked?.length || undefined },
+        { value: 'daily',   label: 'รายวัน — เข้าพักอยู่', count: occDaily?.length || undefined },
         { value: 'checked_out', label: 'เช็คเอ้าท์แล้ว', count: recentOut.length || undefined },
       ]} />
 
       {loading ? (
         <div style={{ textAlign: 'center', padding: 48, color: 'var(--muted)' }}>กำลังโหลด...</div>
       ) : curList.length === 0 ? (
-        <EmptyState icon="📋" title={tab === 'booked' ? 'ยังไม่มีการจอง' : tab === 'occupied' ? 'ยังไม่มีผู้เข้าพัก' : 'ยังไม่มีรายการเช็คเอ้าท์'} />
-      ) : (
+        <EmptyState icon={tab === 'booked' ? '📅' : tab === 'daily' ? '🏠' : '✅'}
+          title={tab === 'booked' ? 'ยังไม่มีการจอง' : tab === 'daily' ? 'ไม่มีผู้เข้าพักรายวันขณะนี้' : 'ยังไม่มีรายการเช็คเอ้าท์'}
+          sub={tab === 'booked' ? 'กด "จองใหม่" เพื่อเพิ่มการจองห้อง' : tab === 'daily' ? 'ผู้เช่ารายเดือนจัดการได้ที่เมนู ผู้เข้าพัก และ ใบแจ้งหนี้' : ''}
+        />
+      ) : tab === 'booked' ? (
+        // ── Tab: รอเช็คอิน ──────────────────────────────────────────────
         <Card padding={0}>
           <table className="tu-table">
             <thead>
-              <tr>
-                <th>ห้อง</th><th>ชื่อ</th><th>ประเภท</th>
-                <th>วันเข้าพัก</th><th>วันออก</th>
-                <th>เงินมัดจำ</th><th>หมายเหตุ</th><th></th>
-              </tr>
+              <tr><th>ห้อง</th><th>ชื่อ</th><th>ประเภท</th><th>วันเข้าพัก</th><th>วันออก / สัญญา</th><th>มัดจำ</th><th>หมายเหตุ</th><th></th></tr>
+            </thead>
+            <tbody>
+              {curList.map(t => (
+                <tr key={t.id} className="tu-row-hover">
+                  <td><Badge tone="neutral">{t.room_id || t.room || '—'}</Badge></td>
+                  <td style={{ fontWeight: 500 }}>{t.name}</td>
+                  <td><Badge tone={t.type === 'daily' ? 'amber' : 'blue'}>{t.type === 'daily' ? 'รายวัน' : 'รายเดือน'}</Badge></td>
+                  <td className="tu-muted">{formatDate((t.check_in || t.checkIn || '').slice(0,10))}</td>
+                  <td className="tu-muted">{t.check_out ? formatDate(t.check_out.slice(0,10)) : '—'}</td>
+                  <td style={{ fontVariantNumeric: 'tabular-nums' }}>
+                    ฿{(t.deposit || 0).toLocaleString()}
+                    {t.notes?.includes('ชำระมัดจำ') && <span style={{ marginLeft: 6, fontSize: 11, color: '#16a34a' }}>✓ ชำระแล้ว</span>}
+                    {t.notes?.includes('ยังไม่ชำระ') && <span style={{ marginLeft: 6, fontSize: 11, color: '#dc2626' }}>ค้าง</span>}
+                  </td>
+                  <td className="tu-muted" style={{ fontSize: 12, maxWidth: 140, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{t.notes || '—'}</td>
+                  <td><Button size="sm" onClick={() => setCheckinTarget(t)}>เช็คอิน</Button></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+      ) : tab === 'daily' ? (
+        // ── Tab: รายวัน เข้าพักอยู่ ─────────────────────────────────────
+        <Card padding={0}>
+          <div style={{ padding: '12px 16px', background: '#fefce8', borderBottom: '1px solid var(--border)', fontSize: 12.5, color: '#854d0e' }}>
+            ผู้เช่า<strong>รายเดือน</strong>ที่เข้าพักอยู่จะจัดการได้ที่เมนู <strong>ผู้เข้าพัก</strong> และ <strong>ใบแจ้งหนี้</strong>
+          </div>
+          <table className="tu-table">
+            <thead>
+              <tr><th>ห้อง</th><th>ชื่อ</th><th>เช็คอินวันที่</th><th>วันออกแผน</th><th>คืนที่พักแล้ว</th><th>คืนเหลือ</th><th>มัดจำ</th><th></th></tr>
             </thead>
             <tbody>
               {curList.map(t => {
-                const isDaily = t.type === 'daily';
-                const isBooked = t.status === 'booked';
-                const isOccupied = t.status === 'occupied';
+                const checkIn = (t.check_in || t.checkIn || '').slice(0, 10);
+                const checkOut = t.check_out ? t.check_out.slice(0, 10) : null;
+                const nightsStayed = diffDays(checkIn, today);
+                const nightsLeft = checkOut ? diffDays(today, checkOut) : null;
+                const isOverdue = nightsLeft !== null && nightsLeft < 0;
+                return (
+                  <tr key={t.id} className="tu-row-hover" style={{ background: isOverdue ? '#fef2f2' : 'inherit' }}>
+                    <td><Badge tone="amber">{t.room_id || t.room || '—'}</Badge></td>
+                    <td style={{ fontWeight: 500 }}>{t.name}</td>
+                    <td className="tu-muted">{formatDate(checkIn)}</td>
+                    <td>{checkOut ? (
+                      <span style={{ color: isOverdue ? '#dc2626' : 'var(--text)', fontWeight: isOverdue ? 600 : 400 }}>
+                        {formatDate(checkOut)} {isOverdue && '⚠️'}
+                      </span>
+                    ) : <span className="tu-muted">—</span>}</td>
+                    <td style={{ fontVariantNumeric: 'tabular-nums', color: 'var(--muted)' }}>{nightsStayed > 0 ? `${nightsStayed} คืน` : '—'}</td>
+                    <td style={{ fontVariantNumeric: 'tabular-nums' }}>
+                      {nightsLeft !== null ? (
+                        <span style={{ color: isOverdue ? '#dc2626' : nightsLeft <= 1 ? '#f59e0b' : '#16a34a', fontWeight: 600 }}>
+                          {isOverdue ? `เกิน ${Math.abs(nightsLeft)} วัน` : `${nightsLeft} คืน`}
+                        </span>
+                      ) : <span className="tu-muted">ไม่กำหนด</span>}
+                    </td>
+                    <td style={{ fontVariantNumeric: 'tabular-nums' }}>฿{(t.deposit || 0).toLocaleString()}</td>
+                    <td>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <Button size="sm" variant="secondary" onClick={() => setExtendTarget(t)}>ต่อสัญญา</Button>
+                        <Button size="sm" onClick={() => setCheckoutTarget(t)}>เช็คเอ้าท์</Button>
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </Card>
+      ) : (
+        // ── Tab: เช็คเอ้าท์แล้ว ──────────────────────────────────────────
+        <Card padding={0}>
+          <table className="tu-table">
+            <thead>
+              <tr><th>ห้อง</th><th>ชื่อ</th><th>วันเข้า</th><th>วันออก</th><th>รวมคืน</th><th>มัดจำ</th></tr>
+            </thead>
+            <tbody>
+              {curList.map(t => {
+                const checkIn = (t.check_in || '').slice(0, 10);
+                const checkOut = (t.check_out || '').slice(0, 10);
+                const nights = checkIn && checkOut ? diffDays(checkIn, checkOut) : null;
                 return (
                   <tr key={t.id} className="tu-row-hover">
                     <td><Badge tone="neutral">{t.room_id || t.room || '—'}</Badge></td>
                     <td style={{ fontWeight: 500 }}>{t.name}</td>
-                    <td><Badge tone={isDaily ? 'amber' : 'blue'}>{isDaily ? 'รายวัน' : 'รายเดือน'}</Badge></td>
-                    <td className="tu-muted">{formatDate(t.check_in || t.checkIn)}</td>
-                    <td className="tu-muted">{t.check_out ? formatDate(t.check_out) : '—'}</td>
+                    <td className="tu-muted">{formatDate(checkIn)}</td>
+                    <td className="tu-muted">{formatDate(checkOut)}</td>
+                    <td className="tu-muted">{nights ? `${nights} คืน` : '—'}</td>
                     <td style={{ fontVariantNumeric: 'tabular-nums' }}>฿{(t.deposit || 0).toLocaleString()}</td>
-                    <td className="tu-muted" style={{ fontSize: 12, maxWidth: 160, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.notes || '—'}</td>
-                    <td>
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        {isBooked && (
-                          <Button size="sm" onClick={() => setCheckinTarget(t)}>เช็คอิน</Button>
-                        )}
-                        {isOccupied && isDaily && (
-                          <>
-                            <Button size="sm" variant="secondary" onClick={() => setExtendTarget(t)}>ต่อสัญญา</Button>
-                            <Button size="sm" onClick={() => setCheckoutTarget(t)}>เช็คเอ้าท์</Button>
-                          </>
-                        )}
-                        {isOccupied && !isDaily && (
-                          <Badge tone="green">เข้าพักแล้ว</Badge>
-                        )}
-                        {t.status === 'checked_out' && (
-                          <Badge tone="neutral">เช็คเอ้าท์แล้ว</Badge>
-                        )}
-                      </div>
-                    </td>
                   </tr>
                 );
               })}
