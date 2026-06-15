@@ -7333,6 +7333,13 @@ function SignUpForm({ onSubmit }) {
       }
       return;
     }
+    // Supabase v2: returns fake-success for existing emails (identities=[])
+    // to prevent email enumeration — detect and show duplicate screen
+    if (!data.user || (data.user.identities && data.user.identities.length === 0)) {
+      setBusy(false);
+      setDupState('duplicate');
+      return;
+    }
     if (data.user) {
       await window.sb.from('profiles').insert({
         id: data.user.id, role: 'tenant', full_name: form.name,
