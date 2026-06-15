@@ -7322,23 +7322,40 @@ function DailyCheckoutModal({ tenant, onClose, onDone }) {
 function ExtendStayModal({ tenant, onClose, onDone }) {
   const today = new Date().toISOString().slice(0, 10);
   const currentOut = tenant.check_out || today;
-  const nextDay = new Date(currentOut); nextDay.setDate(nextDay.getDate() + 1);
-  const [newOut, setNewOut] = React.useState(nextDay.toISOString().slice(0, 10));
+
+  // UTC-safe date helpers (avoid timezone shift bugs)
+  const addDays = (dateStr, n) => {
+    const [y, m, d] = dateStr.split('-').map(Number);
+    return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
+  };
+  const diffDays = (d1, d2) => {
+    const [y1,m1,dd1] = d1.split('-').map(Number);
+    const [y2,m2,dd2] = d2.split('-').map(Number);
+    return Math.round((Date.UTC(y2, m2-1, dd2) - Date.UTC(y1, m1-1, dd1)) / 86400000);
+  };
+
+  const minDate = addDays(currentOut, 1);
+  const [newOut, setNewOut] = React.useState(minDate);
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState('');
+
   const room = ROOMS.find(r => r.id === (tenant.room_id || tenant.room));
   const rate = room?.rent || 500;
-  const extNights = Math.max(0, Math.round((new Date(newOut) - new Date(currentOut)) / 86400000));
+  const extNights = Math.max(0, diffDays(currentOut, newOut));
   const extTotal = extNights * rate;
 
   const doConfirm = async () => {
-    if (extNights < 1) { setErr('วันออกใหม่ต้องหลังวันออกเดิม'); return; }
+    if (extNights < 1) { setErr('วันออกใหม่ต้องหลังวันออกเดิมอย่างน้อย 1 วัน'); return; }
     setBusy(true); setErr('');
     try {
       const roomKey = tenant.room_id || tenant.room;
       if (window.sb) {
         const items = [{ label: `ต่อสัญญา ${extNights} คืน`, qty: extNights, unit: 'คืน', price: rate, amount: extTotal }];
-        await createInvoiceInSB({ tenantId: tenant.id, roomId: roomKey, tenantName: tenant.name, type: 'daily', period: `ต่อสัญญา ${formatDate(currentOut)} – ${formatDate(newOut)}`, issueDate: today, dueDate: today, items });
+        await createInvoiceInSB({
+          tenantId: tenant.id, roomId: roomKey, tenantName: tenant.name, type: 'daily',
+          period: `ต่อสัญญา ${formatDate(currentOut)} – ${formatDate(newOut)}`,
+          issueDate: today, dueDate: today, items,
+        });
         await window.sb.from('tenants').update({ check_out: newOut }).eq('id', tenant.id);
       }
       onDone();
@@ -7347,16 +7364,45 @@ function ExtendStayModal({ tenant, onClose, onDone }) {
 
   return (
     <Modal open onClose={onClose} title="ต่อสัญญาเช่า" width={400}
-      footer={<><Button variant="secondary" onClick={onClose} disabled={busy}>ยกเลิก</Button><Button onClick={doConfirm} disabled={busy || extNights < 1}>{busy ? 'กำลังบันทึก...' : `ต่อสัญญา ${extNights} คืน — ฿${extTotal.toLocaleString()}`}</Button></>}>
+      footer={<>
+        <Button variant="secondary" onClick={onClose} disabled={busy}>ยกเลิก</Button>
+        <Button onClick={doConfirm} disabled={busy || extNights < 1}>
+          {busy ? 'กำลังบันทึก...' : extNights > 0 ? `ต่อสัญญา ${extNights} คืน — ฿${extTotal.toLocaleString()}` : 'เลือกวันออกให้ถูกต้อง'}
+        </Button>
+      </>}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div style={{ padding: 12, background: 'var(--surface-2)', borderRadius: 10 }}>
           <div style={{ fontSize: 14, fontWeight: 600 }}>{tenant.name} — ห้อง {tenant.room_id || tenant.room}</div>
           <div className="tu-muted" style={{ fontSize: 12 }}>วันออกเดิม: {formatDate(currentOut)}</div>
         </div>
-        <Input label="วันออกใหม่" type="date" value={newOut} onChange={setNewOut} />
-        {extNights > 0 && (
+
+        <div>
+          <div style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--muted)', marginBottom: 6 }}>
+            วันออกใหม่ <span style={{ color: 'var(--muted)', fontWeight: 400 }}>(ต้องหลังวันออกเดิม)</span>
+          </div>
+          <input
+            type="date"
+            value={newOut}
+            min={minDate}
+            onChange={e => setNewOut(e.target.value)}
+            style={{
+              width: '100%', height: 42, border: '1px solid var(--border)', borderRadius: 10,
+              padding: '0 12px', fontSize: 14, fontFamily: 'inherit',
+              background: 'var(--surface)', color: 'var(--text)', outline: 'none',
+            }}
+          />
+        </div>
+
+        {extNights > 0 ? (
           <div style={{ padding: 12, background: '#f0fdf4', borderRadius: 10, border: '1px solid #86efac', fontSize: 13 }}>
             ต่อสัญญา <strong>{extNights} คืน</strong> × ฿{rate.toLocaleString()} = <strong style={{ color: 'var(--primary)' }}>฿{extTotal.toLocaleString()}</strong>
+            <div style={{ fontSize: 12, color: 'var(--muted)', marginTop: 4 }}>
+              วันออกใหม่: {formatDate(newOut)}
+            </div>
+          </div>
+        ) : (
+          <div style={{ padding: 10, background: '#fef3c7', borderRadius: 10, border: '1px solid #fde68a', fontSize: 13, color: '#92400e' }}>
+            กรุณาเลือกวันออกหลัง {formatDate(currentOut)}
           </div>
         )}
         {err && <div style={{ fontSize: 12.5, color: '#dc2626' }}>{err}</div>}
