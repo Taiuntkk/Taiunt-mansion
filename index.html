@@ -7029,12 +7029,17 @@ async function createInvoiceInSB({ tenantId, roomId, tenantName, type, period, i
   const ym = issueDate.slice(0, 7).replace('-', '');
   const { count } = await window.sb.from('invoices').select('*', { count: 'exact', head: true });
   const invId = `INV-${ym}-${String((count || 0) + 1).padStart(3, '0')}`;
-  const { error } = await window.sb.from('invoices').insert({
+  const base = {
     id: invId, tenant_id: tenantId, room_id: roomId,
     tenant_name: tenantName, type, period,
     issue_date: issueDate, due_date: dueDate,
-    items, total, status: 'pending',
-  });
+    total, status: 'pending',
+  };
+  // Try with items (JSONB); if column missing, retry without
+  let { error } = await window.sb.from('invoices').insert({ ...base, items });
+  if (error?.message?.includes("'items'") || error?.message?.includes('items')) {
+    ({ error } = await window.sb.from('invoices').insert({ ...base, notes: JSON.stringify(items) }));
+  }
   if (error) throw error;
   return { invId, total };
 }
