@@ -7184,6 +7184,8 @@ function SignInForm({ onSubmit }) {
   const [pw, setPw] = React.useState(connected ? '' : 'demo1234');
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState('');
+  const [resetMode, setResetMode] = React.useState(false);
+  const [resetSent, setResetSent] = React.useState(false);
 
   const doLogin = async () => {
     setBusy(true);
@@ -7193,6 +7195,60 @@ function SignInForm({ onSubmit }) {
     if (error) setErr(error.message === 'Invalid login credentials' ? 'อีเมลหรือรหัสผ่านไม่ถูกต้อง' : error.message);
     // on success App's onAuthStateChange listener resolves the role and routes in
   };
+
+  const doResetPassword = async () => {
+    if (!email) { setErr('กรุณากรอกอีเมลก่อน'); return; }
+    setBusy(true); setErr('');
+    const { error } = await window.sb.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin + window.location.pathname,
+    });
+    setBusy(false);
+    if (error) { setErr('ไม่สามารถส่งอีเมลได้: ' + error.message); return; }
+    setResetSent(true);
+    await notifyAdmin('ขอรีเซ็ตรหัสผ่าน', '(ผู้ใช้งาน)', email);
+  };
+
+  if (resetMode) {
+    if (resetSent) {
+      return (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ textAlign: 'center', padding: '20px 0' }}>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>📧</div>
+            <div style={{ fontSize: 20, fontWeight: 700 }}>ส่งอีเมลแล้ว!</div>
+            <div className="tu-muted" style={{ fontSize: 13, marginTop: 8, lineHeight: 1.6 }}>
+              ระบบส่งลิงก์รีเซ็ตรหัสผ่านไปที่<br/>
+              <strong>{email}</strong><br/>
+              กรุณาตรวจสอบกล่องจดหมาย (และโฟลเดอร์ Spam)
+            </div>
+          </div>
+          <div style={{ padding: 12, background: '#f0fdf4', borderRadius: 10, border: '1px solid #86efac', fontSize: 13, lineHeight: 1.6 }}>
+            หลังจากคลิกลิงก์ในอีเมล ระบบจะพาคุณกลับมาหน้านี้เพื่อตั้งรหัสผ่านใหม่
+          </div>
+          <Button fullWidth variant="secondary" onClick={() => { setResetMode(false); setResetSent(false); }}>
+            กลับหน้าเข้าสู่ระบบ
+          </Button>
+        </div>
+      );
+    }
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div>
+          <div style={{ fontSize: 22, fontWeight: 700, letterSpacing: '-.01em' }}>ลืมรหัสผ่าน</div>
+          <div className="tu-muted" style={{ fontSize: 13, marginTop: 4 }}>
+            กรอกอีเมลที่ลงทะเบียนไว้ ระบบจะส่งลิงก์สำหรับตั้งรหัสผ่านใหม่
+          </div>
+        </div>
+        <Input label="อีเมล" value={email} onChange={setEmail} placeholder="you@example.com" />
+        {err && <div style={{ fontSize: 12.5, color: '#dc2626' }}>{err}</div>}
+        <Button fullWidth size="lg" onClick={doResetPassword} disabled={busy || !email}>
+          {busy ? 'กำลังส่งอีเมล…' : 'ส่งลิงก์รีเซ็ตรหัสผ่าน'}
+        </Button>
+        <Button fullWidth variant="secondary" onClick={() => { setResetMode(false); setErr(''); }}>
+          กลับหน้าเข้าสู่ระบบ
+        </Button>
+      </div>
+    );
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -7208,7 +7264,7 @@ function SignInForm({ onSubmit }) {
         <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
           <input type="checkbox" defaultChecked /> จดจำการเข้าสู่ระบบ
         </label>
-        <a href="#" className="tu-link">ลืมรหัสผ่าน?</a>
+        <a href="#" className="tu-link" onClick={e => { e.preventDefault(); setResetMode(true); setErr(''); }}>ลืมรหัสผ่าน?</a>
       </div>
       {err && <div style={{ fontSize: 12.5, color: '#dc2626' }}>{err}</div>}
       {connected ?
