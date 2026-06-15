@@ -1626,6 +1626,7 @@ const I = {
   phone: <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16.5v3a1.5 1.5 0 0 1-1.7 1.5A18 18 0 0 1 3 4.7 1.5 1.5 0 0 1 4.5 3h3a1.5 1.5 0 0 1 1.5 1.3l.4 2.4a1.5 1.5 0 0 1-.4 1.4L7.5 9.5a14 14 0 0 0 7 7l1.4-1.5a1.5 1.5 0 0 1 1.4-.4l2.4.4A1.5 1.5 0 0 1 21 16.5z"/></svg>,
   user: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 21c0-4.4 3.6-7 8-7s8 2.6 8 7"/></svg>,
   logo: <svg width="22" height="22" viewBox="0 0 32 32" fill="none"><path d="M5 27V13l11-8 11 8v14h-7V19h-8v8z" fill="currentColor"/><circle cx="16" cy="9" r="1.6" fill="#fff"/></svg>,
+  booking: <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/><path d="M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/></svg>,
 };
 
 Object.assign(window, { Card, Stat, Badge, Button, Input, Tabs, Modal, EmptyState, PageFade, I });
@@ -7001,6 +7002,7 @@ function App() {
             <PageFade flipKey={route}>
               {route === 'dashboard' && <AdminDashboard goto={goto} />}
               {route === 'rooms' && <AdminRooms goto={goto} />}
+              {route === 'bookings' && <AdminBookings />}
               {route === 'tenants' && <AdminTenants />}
               {route === 'assets' && <AdminAssets />}
               {route === 'billing' && <AdminBilling />}
@@ -7021,11 +7023,511 @@ function App() {
 
 }
 
+// ─── Bookings ─────────────────────────────────────────────────────────────────
+async function createInvoiceInSB({ tenantId, roomId, tenantName, type, period, issueDate, dueDate, items }) {
+  const total = Math.max(0, items.reduce((s, i) => s + i.amount, 0));
+  const ym = issueDate.slice(0, 7).replace('-', '');
+  const { count } = await window.sb.from('invoices').select('*', { count: 'exact', head: true });
+  const invId = `INV-${ym}-${String((count || 0) + 1).padStart(3, '0')}`;
+  const { error } = await window.sb.from('invoices').insert({
+    id: invId, tenant_id: tenantId, room_id: roomId,
+    tenant_name: tenantName, type, period,
+    issue_date: issueDate, due_date: dueDate,
+    items, total, status: 'pending',
+  });
+  if (error) throw error;
+  return { invId, total };
+}
+
+function AdminBookings() {
+  const [tab, setTab] = React.useState('booked');
+  const [booked, setBooked] = React.useState(null);
+  const [occ, setOcc] = React.useState(null);
+  const [recentOut, setRecentOut] = React.useState([]);
+  const [checkinTarget, setCheckinTarget] = React.useState(null);
+  const [checkoutTarget, setCheckoutTarget] = React.useState(null);
+  const [extendTarget, setExtendTarget] = React.useState(null);
+  const [showCreate, setShowCreate] = React.useState(false);
+
+  const load = React.useCallback(async () => {
+    if (!window.sb) {
+      setBooked(TENANTS.filter(t => t.status === 'booked'));
+      setOcc(TENANTS.filter(t => t.status === 'occupied'));
+      setRecentOut([]);
+      return;
+    }
+    const [r1, r2, r3] = await Promise.all([
+      window.sb.from('tenants').select('*').eq('status', 'booked').order('check_in'),
+      window.sb.from('tenants').select('*').eq('status', 'occupied').order('check_in'),
+      window.sb.from('tenants').select('*').eq('status', 'checked_out').order('id', { ascending: false }).limit(30),
+    ]);
+    setBooked(r1.data || []);
+    setOcc(r2.data || []);
+    setRecentOut(r3.data || []);
+  }, []);
+
+  React.useEffect(() => { load(); }, [load]);
+
+  const afterAction = () => { load(); if (window.TU?.refreshData) window.TU.refreshData(); };
+
+  const curList = tab === 'booked' ? (booked || []) : tab === 'occupied' ? (occ || []) : recentOut;
+  const loading = (tab === 'booked' && booked === null) || (tab === 'occupied' && occ === null);
+
+  return (
+    <div className="tu-page">
+      <PageHeader title="การจอง & เช็คอิน/เอ้าท์" subtitle="Bookings — จัดการการจอง เช็คอิน เช็คเอ้าท์ และออกใบแจ้งหนี้"
+        actions={<Button icon={I.plus} size="sm" onClick={() => setShowCreate(true)}>จองใหม่</Button>}
+      />
+
+      <div style={{ padding: '14px 16px', background: 'var(--surface-2)', borderRadius: 12, fontSize: 13, lineHeight: 1.7, color: 'var(--muted)' }}>
+        <strong style={{ color: 'var(--text)' }}>ขบวนการจอง:</strong>{' '}
+        <span>① สร้างการจอง → ห้องเป็น "จอง"</span>{' · '}
+        <span>② เช็คอิน → ห้องเป็น "เข้าพัก" + ออกใบแจ้งหนี้เดือนแรก (รายเดือน)</span>{' · '}
+        <span>③ รายวัน: ต่อสัญญา หรือ เช็คเอ้าท์ + ออกใบแจ้งหนี้</span>
+      </div>
+
+      <Tabs value={tab} onChange={setTab} options={[
+        { value: 'booked', label: 'รอเช็คอิน', count: booked?.length || undefined },
+        { value: 'occupied', label: 'กำลังเข้าพัก', count: occ?.length || undefined },
+        { value: 'checked_out', label: 'เช็คเอ้าท์แล้ว', count: recentOut.length || undefined },
+      ]} />
+
+      {loading ? (
+        <div style={{ textAlign: 'center', padding: 48, color: 'var(--muted)' }}>กำลังโหลด...</div>
+      ) : curList.length === 0 ? (
+        <EmptyState icon="📋" title={tab === 'booked' ? 'ยังไม่มีการจอง' : tab === 'occupied' ? 'ยังไม่มีผู้เข้าพัก' : 'ยังไม่มีรายการเช็คเอ้าท์'} />
+      ) : (
+        <Card padding={0}>
+          <table className="tu-table">
+            <thead>
+              <tr>
+                <th>ห้อง</th><th>ชื่อ</th><th>ประเภท</th>
+                <th>วันเข้าพัก</th><th>วันออก</th>
+                <th>เงินมัดจำ</th><th>หมายเหตุ</th><th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {curList.map(t => {
+                const isDaily = t.type === 'daily';
+                const isBooked = t.status === 'booked';
+                const isOccupied = t.status === 'occupied';
+                return (
+                  <tr key={t.id} className="tu-row-hover">
+                    <td><Badge tone="neutral">{t.room_id || t.room || '—'}</Badge></td>
+                    <td style={{ fontWeight: 500 }}>{t.name}</td>
+                    <td><Badge tone={isDaily ? 'amber' : 'blue'}>{isDaily ? 'รายวัน' : 'รายเดือน'}</Badge></td>
+                    <td className="tu-muted">{formatDate(t.check_in || t.checkIn)}</td>
+                    <td className="tu-muted">{t.check_out ? formatDate(t.check_out) : '—'}</td>
+                    <td style={{ fontVariantNumeric: 'tabular-nums' }}>฿{(t.deposit || 0).toLocaleString()}</td>
+                    <td className="tu-muted" style={{ fontSize: 12, maxWidth: 160, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.notes || '—'}</td>
+                    <td>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        {isBooked && (
+                          <Button size="sm" onClick={() => setCheckinTarget(t)}>เช็คอิน</Button>
+                        )}
+                        {isOccupied && isDaily && (
+                          <>
+                            <Button size="sm" variant="secondary" onClick={() => setExtendTarget(t)}>ต่อสัญญา</Button>
+                            <Button size="sm" onClick={() => setCheckoutTarget(t)}>เช็คเอ้าท์</Button>
+                          </>
+                        )}
+                        {isOccupied && !isDaily && (
+                          <Badge tone="green">เข้าพักแล้ว</Badge>
+                        )}
+                        {t.status === 'checked_out' && (
+                          <Badge tone="neutral">เช็คเอ้าท์แล้ว</Badge>
+                        )}
+                      </div>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </Card>
+      )}
+
+      {checkinTarget && <CheckinModal tenant={checkinTarget} onClose={() => setCheckinTarget(null)} onDone={afterAction} />}
+      {checkoutTarget && <DailyCheckoutModal tenant={checkoutTarget} onClose={() => setCheckoutTarget(null)} onDone={afterAction} />}
+      {extendTarget && <ExtendStayModal tenant={extendTarget} onClose={() => setExtendTarget(null)} onDone={afterAction} />}
+      {showCreate && <CreateBookingModal onClose={() => setShowCreate(false)} onDone={() => { setShowCreate(false); afterAction(); }} />}
+    </div>
+  );
+}
+
+function CheckinModal({ tenant, onClose, onDone }) {
+  const [depositPaid, setDepositPaid] = React.useState(true);
+  const [pm, setPm] = React.useState(RATE_CONFIG.paymentMethods[0]?.id || 'cash');
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState('');
+  const room = ROOMS.find(r => r.id === (tenant.room_id || tenant.room));
+  const deposit = Number(tenant.deposit) || 0;
+  const isMonthly = tenant.type === 'monthly';
+  const rent = room?.rent || (isMonthly ? 4000 : 500);
+  const today = new Date().toISOString().slice(0, 10);
+  const dueD = new Date(); dueD.setDate(dueD.getDate() + 7);
+  const thMonths = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+  const period = `${thMonths[new Date().getMonth()]} ${new Date().getFullYear() + 543}`;
+  const invoiceItems = isMonthly ? [
+    { label: 'ค่าเช่า (เดือนแรก)', qty: 1, unit: 'เดือน', price: rent, amount: rent },
+    ...(depositPaid && deposit > 0 ? [{ label: 'หักเงินมัดจำ', qty: 1, unit: 'ครั้ง', price: -deposit, amount: -deposit }] : []),
+  ] : [];
+  const invoiceTotal = Math.max(0, invoiceItems.reduce((s, i) => s + i.amount, 0));
+
+  const doConfirm = async () => {
+    setBusy(true); setErr('');
+    try {
+      const pmLabel = RATE_CONFIG.paymentMethods.find(p => p.id === pm)?.label || pm;
+      const noteAdd = depositPaid ? ` | ชำระมัดจำ ฿${deposit.toLocaleString()} ผ่าน${pmLabel}` : ' | ยังไม่ชำระมัดจำ';
+      if (window.sb) {
+        const roomKey = tenant.room_id || tenant.room;
+        await window.sb.from('tenants').update({ status: 'occupied', notes: (tenant.notes || '') + noteAdd }).eq('id', tenant.id);
+        await window.sb.from('rooms').update({ status: 'occupied' }).eq('id', roomKey);
+        if (isMonthly && invoiceItems.length > 0) {
+          await createInvoiceInSB({ tenantId: tenant.id, roomId: roomKey, tenantName: tenant.name, type: 'monthly', period, issueDate: today, dueDate: dueD.toISOString().slice(0, 10), items: invoiceItems });
+        }
+        if (window.TU?.refreshData) await window.TU.refreshData();
+      }
+      onDone();
+    } catch (e) { setErr(e.message || 'เกิดข้อผิดพลาด'); setBusy(false); }
+  };
+
+  return (
+    <Modal open onClose={onClose} title={`เช็คอิน — ห้อง ${tenant.room_id || tenant.room}`} width={480}
+      footer={<><Button variant="secondary" onClick={onClose} disabled={busy}>ยกเลิก</Button><Button onClick={doConfirm} disabled={busy}>{busy ? 'กำลังบันทึก...' : 'ยืนยันเช็คอิน'}</Button></>}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div style={{ padding: 14, background: 'var(--surface-2)', borderRadius: 10 }}>
+          <div style={{ fontSize: 15, fontWeight: 600 }}>{tenant.name}</div>
+          <div className="tu-muted" style={{ fontSize: 13 }}>ห้อง {tenant.room_id || tenant.room} · {isMonthly ? 'รายเดือน' : 'รายวัน'} · เข้า {formatDate(tenant.check_in || tenant.checkIn)}</div>
+        </div>
+
+        {deposit > 0 && (
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 8 }}>เงินมัดจำ ฿{deposit.toLocaleString()}</div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {[{v:true,t:'รับเงินมัดจำแล้ว'},{v:false,t:'ยังไม่ได้รับมัดจำ'}].map(o => (
+                <button key={String(o.v)} onClick={() => setDepositPaid(o.v)} style={{
+                  flex: 1, padding: '10px 0', borderRadius: 8, border: `2px solid ${depositPaid === o.v ? 'var(--primary)' : 'var(--border)'}`,
+                  background: depositPaid === o.v ? 'var(--primary-soft)' : 'var(--surface)', cursor: 'pointer', fontFamily: 'inherit',
+                  fontSize: 13, color: depositPaid === o.v ? 'var(--primary)' : 'var(--text)',
+                }}>{o.t}</button>
+              ))}
+            </div>
+            {depositPaid && (
+              <div style={{ marginTop: 10 }}>
+                <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 6 }}>วิธีรับเงินมัดจำ</div>
+                <div style={{ display: 'flex', gap: 6 }}>
+                  {RATE_CONFIG.paymentMethods.map(m => (
+                    <button key={m.id} onClick={() => setPm(m.id)} style={{
+                      flex: 1, padding: '8px 4px', borderRadius: 7, border: `1.5px solid ${pm === m.id ? 'var(--primary)' : 'var(--border)'}`,
+                      background: pm === m.id ? 'var(--primary-soft)' : 'var(--surface)', cursor: 'pointer', fontFamily: 'inherit',
+                      fontSize: 12, color: pm === m.id ? 'var(--primary)' : 'var(--text)',
+                    }}>{m.label}</button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {isMonthly && (
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 8 }}>ใบแจ้งหนี้เดือนแรก (สร้างอัตโนมัติ)</div>
+            <div style={{ background: 'var(--surface-2)', borderRadius: 10, overflow: 'hidden' }}>
+              {invoiceItems.map((item, i) => (
+                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 14px', borderBottom: i < invoiceItems.length - 1 ? '1px solid var(--border)' : 0, fontSize: 13 }}>
+                  <span>{item.label}</span>
+                  <span style={{ fontVariantNumeric: 'tabular-nums', color: item.amount < 0 ? '#b35a1f' : 'inherit' }}>{item.amount < 0 ? '−' : ''}฿{Math.abs(item.amount).toLocaleString()}</span>
+                </div>
+              ))}
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '11px 14px', fontWeight: 600, fontSize: 14, background: 'var(--surface)' }}>
+                <span>รวมที่ต้องชำระ</span>
+                <span style={{ color: 'var(--primary)' }}>฿{invoiceTotal.toLocaleString()}</span>
+              </div>
+            </div>
+          </div>
+        )}
+        {err && <div style={{ fontSize: 12.5, color: '#dc2626' }}>{err}</div>}
+      </div>
+    </Modal>
+  );
+}
+
+function DailyCheckoutModal({ tenant, onClose, onDone }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [checkoutDate, setCheckoutDate] = React.useState(today);
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState('');
+  const room = ROOMS.find(r => r.id === (tenant.room_id || tenant.room));
+  const rate = room?.rent || 500;
+  const deposit = Number(tenant.deposit) || 0;
+  const checkIn = tenant.check_in || tenant.checkIn;
+  const nights = Math.max(1, Math.round((new Date(checkoutDate) - new Date(checkIn)) / 86400000));
+  const rentTotal = nights * rate;
+  const items = [
+    { label: `ค่าที่พัก ${nights} คืน (฿${rate.toLocaleString()}/คืน)`, qty: nights, unit: 'คืน', price: rate, amount: rentTotal },
+    ...(deposit > 0 ? [{ label: 'หักเงินมัดจำ', qty: 1, unit: 'ครั้ง', price: -deposit, amount: -deposit }] : []),
+  ];
+  const total = Math.max(0, items.reduce((s, i) => s + i.amount, 0));
+
+  const doConfirm = async () => {
+    setBusy(true); setErr('');
+    try {
+      const roomKey = tenant.room_id || tenant.room;
+      if (window.sb) {
+        await createInvoiceInSB({ tenantId: tenant.id, roomId: roomKey, tenantName: tenant.name, type: 'daily', period: `${formatDate(checkIn)} – ${formatDate(checkoutDate)}`, issueDate: today, dueDate: today, items });
+        await window.sb.from('tenants').update({ status: 'checked_out', check_out: checkoutDate }).eq('id', tenant.id);
+        await window.sb.from('rooms').update({ status: 'cleaning' }).eq('id', roomKey);
+        if (window.TU?.refreshData) await window.TU.refreshData();
+      }
+      onDone();
+    } catch (e) { setErr(e.message || 'เกิดข้อผิดพลาด'); setBusy(false); }
+  };
+
+  return (
+    <Modal open onClose={onClose} title={`เช็คเอ้าท์ — ห้อง ${tenant.room_id || tenant.room}`} width={440}
+      footer={<><Button variant="secondary" onClick={onClose} disabled={busy}>ยกเลิก</Button><Button onClick={doConfirm} disabled={busy}>{busy ? 'กำลังบันทึก...' : 'ยืนยัน + ออกใบแจ้งหนี้'}</Button></>}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div style={{ padding: 14, background: 'var(--surface-2)', borderRadius: 10 }}>
+          <div style={{ fontSize: 15, fontWeight: 600 }}>{tenant.name}</div>
+          <div className="tu-muted" style={{ fontSize: 13 }}>เข้าพักตั้งแต่ {formatDate(checkIn)}</div>
+        </div>
+        <Input label="วันที่เช็คเอ้าท์" type="date" value={checkoutDate} onChange={setCheckoutDate} />
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 8 }}>สรุปค่าใช้จ่าย</div>
+          <div style={{ background: 'var(--surface-2)', borderRadius: 10, overflow: 'hidden' }}>
+            {items.map((item, i) => (
+              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 14px', borderBottom: i < items.length - 1 ? '1px solid var(--border)' : 0, fontSize: 13 }}>
+                <span>{item.label}</span>
+                <span style={{ fontVariantNumeric: 'tabular-nums', color: item.amount < 0 ? '#b35a1f' : 'inherit' }}>{item.amount < 0 ? '−' : ''}฿{Math.abs(item.amount).toLocaleString()}</span>
+              </div>
+            ))}
+            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '11px 14px', fontWeight: 600, fontSize: 14, background: 'var(--surface)' }}>
+              <span>รวมที่ต้องชำระ</span>
+              <span style={{ color: 'var(--primary)' }}>฿{total.toLocaleString()}</span>
+            </div>
+          </div>
+        </div>
+        {err && <div style={{ fontSize: 12.5, color: '#dc2626' }}>{err}</div>}
+      </div>
+    </Modal>
+  );
+}
+
+function ExtendStayModal({ tenant, onClose, onDone }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const currentOut = tenant.check_out || today;
+  const nextDay = new Date(currentOut); nextDay.setDate(nextDay.getDate() + 1);
+  const [newOut, setNewOut] = React.useState(nextDay.toISOString().slice(0, 10));
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState('');
+  const room = ROOMS.find(r => r.id === (tenant.room_id || tenant.room));
+  const rate = room?.rent || 500;
+  const extNights = Math.max(0, Math.round((new Date(newOut) - new Date(currentOut)) / 86400000));
+  const extTotal = extNights * rate;
+
+  const doConfirm = async () => {
+    if (extNights < 1) { setErr('วันออกใหม่ต้องหลังวันออกเดิม'); return; }
+    setBusy(true); setErr('');
+    try {
+      const roomKey = tenant.room_id || tenant.room;
+      if (window.sb) {
+        const items = [{ label: `ต่อสัญญา ${extNights} คืน`, qty: extNights, unit: 'คืน', price: rate, amount: extTotal }];
+        await createInvoiceInSB({ tenantId: tenant.id, roomId: roomKey, tenantName: tenant.name, type: 'daily', period: `ต่อสัญญา ${formatDate(currentOut)} – ${formatDate(newOut)}`, issueDate: today, dueDate: today, items });
+        await window.sb.from('tenants').update({ check_out: newOut }).eq('id', tenant.id);
+      }
+      onDone();
+    } catch (e) { setErr(e.message || 'เกิดข้อผิดพลาด'); setBusy(false); }
+  };
+
+  return (
+    <Modal open onClose={onClose} title="ต่อสัญญาเช่า" width={400}
+      footer={<><Button variant="secondary" onClick={onClose} disabled={busy}>ยกเลิก</Button><Button onClick={doConfirm} disabled={busy || extNights < 1}>{busy ? 'กำลังบันทึก...' : `ต่อสัญญา ${extNights} คืน — ฿${extTotal.toLocaleString()}`}</Button></>}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ padding: 12, background: 'var(--surface-2)', borderRadius: 10 }}>
+          <div style={{ fontSize: 14, fontWeight: 600 }}>{tenant.name} — ห้อง {tenant.room_id || tenant.room}</div>
+          <div className="tu-muted" style={{ fontSize: 12 }}>วันออกเดิม: {formatDate(currentOut)}</div>
+        </div>
+        <Input label="วันออกใหม่" type="date" value={newOut} onChange={setNewOut} />
+        {extNights > 0 && (
+          <div style={{ padding: 12, background: '#f0fdf4', borderRadius: 10, border: '1px solid #86efac', fontSize: 13 }}>
+            ต่อสัญญา <strong>{extNights} คืน</strong> × ฿{rate.toLocaleString()} = <strong style={{ color: 'var(--primary)' }}>฿{extTotal.toLocaleString()}</strong>
+          </div>
+        )}
+        {err && <div style={{ fontSize: 12.5, color: '#dc2626' }}>{err}</div>}
+      </div>
+    </Modal>
+  );
+}
+
+function CreateBookingModal({ onClose, onDone }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const [form, setForm] = React.useState({
+    type: 'monthly', room: '', name: '', phone: '',
+    checkIn: today, checkOut: '', months: 1,
+    deposit: 5000, depositPaid: false,
+    paymentMethod: RATE_CONFIG.paymentMethods[0]?.id || 'cash',
+    notes: '',
+  });
+  const [busy, setBusy] = React.useState(false);
+  const [err, setErr] = React.useState('');
+
+  const upd = (k, v) => setForm(f => {
+    const n = { ...f, [k]: v };
+    if (k === 'type') {
+      const def = RATE_CONFIG.presets.find(p => p.type === v);
+      n.deposit = def?.deposit || (v === 'monthly' ? 5000 : 200); n.room = '';
+    }
+    return n;
+  });
+
+  const availRooms = ROOMS.filter(r => r.type === form.type && r.status === 'vacant');
+
+  const doSave = async () => {
+    if (!form.name.trim()) { setErr('กรุณากรอกชื่อ'); return; }
+    if (!form.room) { setErr('กรุณาเลือกห้อง'); return; }
+    setBusy(true); setErr('');
+    try {
+      const pmLabel = RATE_CONFIG.paymentMethods.find(p => p.id === form.paymentMethod)?.label || form.paymentMethod;
+      const noteParts = [form.notes, form.depositPaid ? `ชำระมัดจำ ฿${Number(form.deposit).toLocaleString()} ผ่าน${pmLabel}` : 'ยังไม่ชำระมัดจำ'].filter(Boolean);
+      if (window.sb) {
+        const { count } = await window.sb.from('tenants').select('*', { count: 'exact', head: true });
+        const newId = 'T' + String((count || 0) + 1).padStart(4, '0');
+        const addMonths = (d, n) => { const x = new Date(d); x.setMonth(x.getMonth() + n); return x.toISOString().slice(0, 10); };
+        const insertData = {
+          id: newId, name: form.name.trim(), phone: form.phone.trim(),
+          room_id: form.room, type: form.type, check_in: form.checkIn,
+          ...(form.type === 'daily' && form.checkOut ? { check_out: form.checkOut } : {}),
+          ...(form.type === 'monthly' && form.months ? { check_out: addMonths(form.checkIn, Number(form.months)) } : {}),
+          deposit: Number(form.deposit), status: 'booked',
+          notes: noteParts.join(' | ') || null,
+        };
+        let { error } = await window.sb.from('tenants').insert(insertData);
+        if (error?.message?.includes('notes')) ({ error } = await window.sb.from('tenants').insert({ ...insertData, notes: undefined }));
+        if (error) throw error;
+        await window.sb.from('rooms').update({ status: 'booked' }).eq('id', form.room);
+        if (window.TU?.refreshData) await window.TU.refreshData();
+      } else {
+        const r = ROOMS.find(x => x.id === form.room);
+        if (r) r.status = 'booked';
+      }
+      onDone();
+    } catch (e) { setErr(e.message || 'เกิดข้อผิดพลาด'); setBusy(false); }
+  };
+
+  const btnStyle = (active) => ({
+    textAlign: 'left', padding: '10px 14px', borderRadius: 10, fontFamily: 'inherit', cursor: 'pointer',
+    border: active ? '2px solid var(--primary)' : '1px solid var(--border)',
+    background: active ? 'var(--primary-soft)' : 'var(--surface)', transition: 'all .15s',
+  });
+
+  return (
+    <Modal open onClose={onClose} title="สร้างการจองใหม่" width={520}
+      footer={<><Button variant="secondary" onClick={onClose} disabled={busy}>ยกเลิก</Button><Button onClick={doSave} disabled={busy || !form.room || !form.name.trim()}>{busy ? 'กำลังบันทึก...' : 'บันทึกการจอง'}</Button></>}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+        {/* Type */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+          {[{v:'monthly',t:'รายเดือน'},{v:'daily',t:'รายวัน'}].map(o => {
+            const pr = RATE_CONFIG.presets.find(p => p.type === o.v);
+            return (
+              <button key={o.v} onClick={() => upd('type', o.v)} style={btnStyle(form.type === o.v)}>
+                <div style={{ fontSize: 14, fontWeight: 600, color: form.type === o.v ? 'var(--primary)' : 'var(--text)' }}>{o.t}</div>
+                <div className="tu-muted" style={{ fontSize: 12, marginTop: 2 }}>{pr ? `฿${pr.rent.toLocaleString()} | มัดจำ ฿${pr.deposit.toLocaleString()}` : '—'}</div>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Room picker */}
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 6 }}>
+            เลือกห้อง {availRooms.length === 0 && <span style={{ color: '#dc2626' }}>(ไม่มีห้องว่าง)</span>}
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {availRooms.map(r => (
+              <button key={r.id} onClick={() => upd('room', r.id)} style={{
+                padding: '6px 14px', borderRadius: 8, fontFamily: 'inherit', cursor: 'pointer', fontSize: 13,
+                border: `2px solid ${form.room === r.id ? 'var(--primary)' : 'var(--border)'}`,
+                background: form.room === r.id ? 'var(--primary-soft)' : 'var(--surface)',
+                color: form.room === r.id ? 'var(--primary)' : 'var(--text)',
+              }}>{r.id}</button>
+            ))}
+            {availRooms.length === 0 && <span style={{ fontSize: 13, color: 'var(--muted)' }}>ไม่มีห้องว่างประเภทนี้</span>}
+          </div>
+        </div>
+
+        <Input label="ชื่อ-นามสกุล *" value={form.name} onChange={v => upd('name', v)} placeholder="ชื่อผู้จอง" />
+        <Input label="เบอร์โทร" value={form.phone} onChange={v => upd('phone', v)} placeholder="081-xxx-xxxx" />
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <Input label="วันเข้าพัก" type="date" value={form.checkIn} onChange={v => upd('checkIn', v)} />
+          {form.type === 'daily' ? (
+            <Input label="วันออก (รายวัน)" type="date" value={form.checkOut} onChange={v => upd('checkOut', v)} />
+          ) : (
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 6 }}>จำนวนเดือน</div>
+              <div style={{ display: 'flex', gap: 6 }}>
+                {[1,3,6,12].map(n => (
+                  <button key={n} onClick={() => upd('months', n)} style={{
+                    padding: '7px 12px', borderRadius: 8, fontFamily: 'inherit', cursor: 'pointer', fontSize: 13,
+                    border: `2px solid ${form.months === n ? 'var(--primary)' : 'var(--border)'}`,
+                    background: form.months === n ? 'var(--primary-soft)' : 'var(--surface)',
+                    color: form.months === n ? 'var(--primary)' : 'var(--text)',
+                  }}>{n}</button>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+
+        {/* Deposit */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+          <Input label="เงินมัดจำ (฿)" type="number" value={form.deposit} onChange={v => upd('deposit', v)} />
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 6 }}>สถานะมัดจำ</div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {[{v:false,t:'ยังไม่ชำระ'},{v:true,t:'ชำระแล้ว'}].map(o => (
+                <button key={String(o.v)} onClick={() => upd('depositPaid', o.v)} style={{
+                  flex: 1, padding: '8px 0', borderRadius: 8, fontFamily: 'inherit', cursor: 'pointer', fontSize: 12,
+                  border: `2px solid ${form.depositPaid === o.v ? 'var(--primary)' : 'var(--border)'}`,
+                  background: form.depositPaid === o.v ? 'var(--primary-soft)' : 'var(--surface)',
+                  color: form.depositPaid === o.v ? 'var(--primary)' : 'var(--text)',
+                }}>{o.t}</button>
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {form.depositPaid && (
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 6 }}>วิธีชำระมัดจำ</div>
+            <div style={{ display: 'flex', gap: 6 }}>
+              {RATE_CONFIG.paymentMethods.map(m => (
+                <button key={m.id} onClick={() => upd('paymentMethod', m.id)} style={{
+                  flex: 1, padding: '8px 0', borderRadius: 8, fontFamily: 'inherit', cursor: 'pointer', fontSize: 12,
+                  border: `1.5px solid ${form.paymentMethod === m.id ? 'var(--primary)' : 'var(--border)'}`,
+                  background: form.paymentMethod === m.id ? 'var(--primary-soft)' : 'var(--surface)',
+                  color: form.paymentMethod === m.id ? 'var(--primary)' : 'var(--text)',
+                }}>{m.label}</button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        <Input label="หมายเหตุ" value={form.notes} onChange={v => upd('notes', v)} placeholder="ข้อมูลเพิ่มเติม" rows={2} />
+        {err && <div style={{ fontSize: 12.5, color: '#dc2626' }}>{err}</div>}
+      </div>
+    </Modal>
+  );
+}
+
 // ── Sidebar ─────────────────────────────────────────────────────────────
 function Sidebar({ route, onNav }) {
   const items = [
   { v: 'dashboard', icon: I.dashboard, label: 'Dashboard', th: 'ภาพรวม' },
   { v: 'rooms', icon: I.rooms, label: 'Rooms', th: 'ผังห้อง' },
+  { v: 'bookings', icon: I.booking, label: 'Bookings', th: 'การจอง' },
   { v: 'tenants', icon: I.tenants, label: 'Tenants', th: 'ผู้เข้าพัก' },
   { v: 'assets', icon: I.assets, label: 'Assets', th: 'ทรัพย์สิน' },
   { v: 'billing', icon: I.billing, label: 'Billing', th: 'ใบแจ้งหนี้' },
