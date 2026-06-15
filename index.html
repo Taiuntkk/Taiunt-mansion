@@ -3639,24 +3639,36 @@ function AdminPendingTenants({ onApproved }) {
 
   const load = React.useCallback(async () => {
     if (!window.sb) { setPending([]); return; }
-    const [{ data: pend }, { data: rej }] = await Promise.all([
+    const [{ data: pend }, rejResult] = await Promise.all([
       window.sb.from('profiles').select('*').eq('role', 'tenant').is('room_id', null).order('created_at'),
       window.sb.from('profiles').select('*').eq('role', 'rejected').order('rejected_at', { ascending: false }).limit(50),
     ]);
     setPending(pend || []);
-    setRejected(rej || []);
+    // Fallback if rejected_at column doesn't exist yet
+    if (rejResult.error) {
+      const { data: rej2 } = await window.sb.from('profiles').select('*').eq('role', 'rejected').limit(50);
+      setRejected(rej2 || []);
+    } else {
+      setRejected(rejResult.data || []);
+    }
   }, []);
 
   React.useEffect(() => { load(); }, []);
 
   const doReject = async (profile) => {
-    // Mark as rejected (keep record for log) instead of hard-delete
-    const { error } = await window.sb.from('profiles')
-      .update({ role: 'rejected', rejected_at: new Date().toISOString() })
+    const now = new Date().toISOString();
+    // Try with rejected_at first; fall back if column doesn't exist yet
+    let { error } = await window.sb.from('profiles')
+      .update({ role: 'rejected', rejected_at: now })
       .eq('id', profile.id);
+    if (error) {
+      ({ error } = await window.sb.from('profiles')
+        .update({ role: 'rejected' })
+        .eq('id', profile.id));
+    }
     if (!error) {
       setPending(p => p.filter(x => x.id !== profile.id));
-      setRejected(r => [{ ...profile, role: 'rejected', rejected_at: new Date().toISOString() }, ...r]);
+      setRejected(r => [{ ...profile, role: 'rejected', rejected_at: now }, ...r]);
       if (onApproved) onApproved();
     }
     setRejectTarget(null);
