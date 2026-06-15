@@ -229,7 +229,21 @@ window.sb = (SUPABASE_URL.startsWith('https://') && SUPABASE_ANON_KEY.length > 2
 const EJ_SERVICE  = 'service_9l32rdz';
 const EJ_APPROVE  = 'approve_tenant';
 const EJ_REJECT   = 'reject_tenant';
+const EJ_NOTIFY   = 'notify_admin';
+const ADMIN_EMAIL = 'taiuntkk@gmail.com';
 emailjs.init('waq5oA61IcBepa0Z8');
+
+// Send admin notification (BCC-style) — fails silently so it never blocks the user
+async function notifyAdmin(action, userName, userEmail) {
+  try {
+    await emailjs.send(EJ_SERVICE, EJ_NOTIFY, {
+      to_email: ADMIN_EMAIL,
+      action,
+      user_name: userName || '—',
+      user_email: userEmail || '—',
+    });
+  } catch (_) {}
+}
 
 // Mock data for TaiUnt Mansion Park
 (function(){
@@ -7282,9 +7296,14 @@ function SignUpForm({ onSubmit }) {
     const { error } = await window.sb.auth.resetPasswordForEmail(form.email, {
       redirectTo: window.location.origin + window.location.pathname,
     });
+    if (!error) {
+      setResetSent(true);
+      // BCC admin
+      await notifyAdmin('ขอรีเซ็ตรหัสผ่าน', '(ผู้ใช้งาน)', form.email);
+    } else {
+      setErr('ไม่สามารถส่งอีเมลได้: ' + error.message);
+    }
     setBusy(false);
-    if (!error) setResetSent(true);
-    else setErr('ไม่สามารถส่งอีเมลได้: ' + error.message);
   };
 
   const doSignup = async () => {
@@ -7320,6 +7339,8 @@ function SignUpForm({ onSubmit }) {
         phone: form.phone, email: form.email,
       });
     }
+    // Notify admin of new signup
+    await notifyAdmin('สมัครสมาชิกใหม่ — รอการอนุมัติ', form.name, form.email);
     setBusy(false);
     setDone(true);
   };
