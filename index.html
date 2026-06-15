@@ -7029,19 +7029,25 @@ async function createInvoiceInSB({ tenantId, roomId, tenantName, type, period, i
   const ym = issueDate.slice(0, 7).replace('-', '');
   const { count } = await window.sb.from('invoices').select('*', { count: 'exact', head: true });
   const invId = `INV-${ym}-${String((count || 0) + 1).padStart(3, '0')}`;
-  const base = {
-    id: invId, tenant_id: tenantId, room_id: roomId,
-    tenant_name: tenantName, type, period,
-    issue_date: issueDate, due_date: dueDate,
-    total, status: 'pending',
-  };
-  // Try with items (JSONB); if column missing, retry without
-  let { error } = await window.sb.from('invoices').insert({ ...base, items });
-  if (error?.message?.includes("'items'") || error?.message?.includes('items')) {
-    ({ error } = await window.sb.from('invoices').insert({ ...base, notes: JSON.stringify(items) }));
+
+  // Try multiple column-name variants (Supabase table may differ)
+  const variants = [
+    { id: invId, tenant_id: tenantId, room_id: roomId, tenant_name: tenantName, type, period, issue_date: issueDate, due_date: dueDate, items, total, status: 'pending' },
+    { id: invId, tenant_id: tenantId, room_id: roomId, tenant_name: tenantName, type, period, issue_date: issueDate, due_date: dueDate, notes: JSON.stringify(items), total, status: 'pending' },
+    { id: invId, tenant_id: tenantId, room: roomId, tenant_name: tenantName, type, period, issue_date: issueDate, due_date: dueDate, notes: JSON.stringify(items), total, status: 'pending' },
+    { id: invId, type, period, issue_date: issueDate, due_date: dueDate, notes: `${tenantName} | ${period} | ${JSON.stringify(items)}`, total, status: 'pending' },
+  ];
+
+  let lastErr = null;
+  for (const v of variants) {
+    const { error } = await window.sb.from('invoices').insert(v);
+    if (!error) return { invId, total };
+    lastErr = error;
+    const m = error.message || '';
+    // Only continue if it's a column/schema mismatch, not a permission/PK error
+    if (!m.includes('column') && !m.includes('schema') && !m.includes("'items'") && !m.includes("'room_id'") && !m.includes("'room'") && !m.includes("'tenant_name'") && !m.includes("'tenant_id'")) break;
   }
-  if (error) throw error;
-  return { invId, total };
+  throw lastErr;
 }
 
 function AdminBookings() {
