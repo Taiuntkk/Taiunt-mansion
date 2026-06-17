@@ -7081,12 +7081,12 @@ function AdminBookings() {
     const todayStr = new Date().toISOString().slice(0, 10);
     const [r1, r2, r3] = await Promise.all([
       window.sb.from('tenants').select('*').eq('status', 'booked').order('check_in'),
-      // Daily occupied: status=occupied AND (no check_out OR check_out >= today)
+      // Daily occupied: status=occupied AND not yet actually checked out
       window.sb.from('tenants').select('*').eq('status', 'occupied').eq('type', 'daily')
-        .or(`check_out.is.null,check_out.gte.${todayStr}`).order('check_in'),
-      // Checked out: has check_out date in the past (no status filter needed)
-      window.sb.from('tenants').select('*').not('check_out', 'is', null)
-        .lt('check_out', todayStr).order('check_out', { ascending: false }).limit(30),
+        .is('checked_out_at', null).order('check_in'),
+      // Checked out: has actually been checked out (checked_out_at set)
+      window.sb.from('tenants').select('*').not('checked_out_at', 'is', null)
+        .order('checked_out_at', { ascending: false }).limit(30),
     ]);
     setBooked(r1.data || []);
     setOccDaily(r2.data || []);
@@ -7474,7 +7474,7 @@ function DailyCheckoutModal({ tenant, onClose, onDone }) {
         const refundNote = (refund > 0 ? ` | คืนเงิน ฿${refund.toLocaleString()} เมื่อเช็คเอ้าท์` : owes === 0 ? ' | ชำระครบถ้วนเมื่อเช็คเอ้าท์' : '') + keyNote;
         // Don't set status='checked_out' — room_status enum doesn't have that value
         // Setting check_out date is enough to remove from active lists
-        const { error: upErr } = await window.sb.from('tenants').update({ check_out: checkoutDate, notes: (tenant.notes || '') + refundNote, key_deposit: 0 }).eq('id', tenant.id);
+        const { error: upErr } = await window.sb.from('tenants').update({ check_out: checkoutDate, checked_out_at: new Date().toISOString(), notes: (tenant.notes || '') + refundNote, key_deposit: 0 }).eq('id', tenant.id);
         if (upErr) throw upErr;
         await window.sb.from('rooms').update({ status: 'cleaning' }).eq('id', roomKey);
         if (window.TU?.refreshData) await window.TU.refreshData();
