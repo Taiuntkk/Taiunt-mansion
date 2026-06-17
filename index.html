@@ -7257,6 +7257,7 @@ function CheckinModal({ tenant, onClose, onDone }) {
   const [depositPaid, setDepositPaid] = React.useState(true);
   const [collectKeyDeposit, setCollectKeyDeposit] = React.useState(true);
   const [keyDepositAmt, setKeyDepositAmt] = React.useState(Number(RATE_CONFIG.keyDeposit) || 0);
+  const [skipReason, setSkipReason] = React.useState('');
   const [pm, setPm] = React.useState(RATE_CONFIG.paymentMethods[0]?.id || 'cash');
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState('');
@@ -7286,12 +7287,13 @@ function CheckinModal({ tenant, onClose, onDone }) {
   const invoiceTotal = Math.max(0, invoiceItems.reduce((s, i) => s + i.amount, 0));
 
   const doConfirm = async () => {
+    if (!collectKeyDeposit && !skipReason.trim()) { setErr('กรุณาระบุสาเหตุที่ไม่เก็บมัดจำกุญแจ'); return; }
     setBusy(true); setErr('');
     try {
       const pmLabel = RATE_CONFIG.paymentMethods.find(p => p.id === pm)?.label || pm;
       const noteParts = [
         depositPaid ? `ชำระมัดจำ ฿${deposit.toLocaleString()} ผ่าน${pmLabel}` : 'ยังไม่ชำระมัดจำ',
-        collectKeyDeposit && keyDepositAmt > 0 ? `รับมัดจำกุญแจ ฿${keyDepositAmt.toLocaleString()}` : null,
+        collectKeyDeposit && keyDepositAmt > 0 ? `รับมัดจำกุญแจ ฿${keyDepositAmt.toLocaleString()}` : `ไม่เก็บมัดจำกุญแจ — เหตุผล: ${skipReason.trim()}`,
       ].filter(Boolean);
       const noteAdd = ' | ' + noteParts.join(' | ');
       if (window.sb) {
@@ -7313,7 +7315,7 @@ function CheckinModal({ tenant, onClose, onDone }) {
 
   return (
     <Modal open onClose={onClose} title={`เช็คอิน — ห้อง ${tenant.room_id || tenant.room}`} width={480}
-      footer={<><Button variant="secondary" onClick={onClose} disabled={busy}>ยกเลิก</Button><Button onClick={doConfirm} disabled={busy}>{busy ? 'กำลังบันทึก...' : 'ยืนยันเช็คอิน'}</Button></>}>
+      footer={<><Button variant="secondary" onClick={onClose} disabled={busy}>ยกเลิก</Button><Button onClick={doConfirm} disabled={busy || (!collectKeyDeposit && !skipReason.trim())}>{busy ? 'กำลังบันทึก...' : 'ยืนยันเช็คอิน'}</Button></>}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div style={{ padding: 14, background: 'var(--surface-2)', borderRadius: 10 }}>
           <div style={{ fontSize: 15, fontWeight: 600 }}>{tenant.name}</div>
@@ -7360,11 +7362,17 @@ function CheckinModal({ tenant, onClose, onDone }) {
               }}>{o.t}</button>
             ))}
           </div>
-          {collectKeyDeposit && (
+          {collectKeyDeposit ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
               <span className="tu-muted" style={{ fontSize: 13 }}>฿</span>
               <input type="number" value={keyDepositAmt} onChange={e => setKeyDepositAmt(Number(e.target.value) || 0)}
                 style={{ flex: 1, height: 38, border: '1px solid var(--border)', borderRadius: 8, padding: '0 10px', fontSize: 13, fontFamily: 'inherit', background: 'var(--surface)', color: 'var(--text)', outline: 'none' }} />
+            </div>
+          ) : (
+            <div>
+              <div style={{ fontSize: 12, color: '#b45309', marginBottom: 6 }}>กรุณาระบุสาเหตุที่ไม่เก็บมัดจำกุญแจ *</div>
+              <input value={skipReason} onChange={e => setSkipReason(e.target.value)} placeholder="เช่น ผู้เช่าเป็นลูกค้าประจำ / ลืมเอากุญแจสำรองมา"
+                style={{ width: '100%', height: 38, border: `1px solid ${!skipReason.trim() ? '#fca5a5' : 'var(--border)'}`, borderRadius: 8, padding: '0 10px', fontSize: 13, fontFamily: 'inherit', background: 'var(--surface)', color: 'var(--text)', outline: 'none', boxSizing: 'border-box' }} />
             </div>
           )}
         </div>
