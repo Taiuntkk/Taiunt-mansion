@@ -7343,7 +7343,9 @@ function CheckinModal({ tenant, onClose, onDone }) {
 function DailyCheckoutModal({ tenant, onClose, onDone }) {
   const today = new Date().toISOString().slice(0, 10);
   const checkIn = (tenant.check_in || tenant.checkIn || today).slice(0, 10);
-  const [checkoutDate, setCheckoutDate] = React.useState(today);
+  // Default to the tenant's planned checkout date (e.g. after ต่อสัญญา) if it's later than today
+  const plannedOut = tenant.check_out ? tenant.check_out.slice(0, 10) : null;
+  const [checkoutDate, setCheckoutDate] = React.useState(plannedOut && plannedOut > today ? plannedOut : today);
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState('');
   const [invErr, setInvErr] = React.useState('');
