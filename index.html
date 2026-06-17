@@ -2919,6 +2919,7 @@ let RATE_CONFIG = loadRateConfig() || {
     { id: 'bank', label: 'โอนธนาคาร',     detail: '' },
     { id: 'cash', label: 'เงินสด',         detail: 'รับที่สำนักงาน' },
   ],
+  keyDeposit: 200,
 };
 function saveRateConfig() { try { localStorage.setItem('TU_RATE_CONFIG', JSON.stringify(RATE_CONFIG)); } catch {} }
 
@@ -2975,6 +2976,16 @@ function RateSettingsModal({ open, onClose }) {
             <input style={inputStyle} placeholder="ค่าเช่า" type="number" value={np.rent} onChange={e => setNp(p => ({ ...p, rent: e.target.value }))} />
             <input style={inputStyle} placeholder="มัดจำ" type="number" value={np.deposit} onChange={e => setNp(p => ({ ...p, deposit: e.target.value }))} />
             <Button size="sm" icon={I.plus} onClick={addPreset} disabled={!np.label || !np.rent}>เพิ่ม</Button>
+          </div>
+        </div>
+
+        {/* Key deposit */}
+        <div>
+          <SectionTitle>เงินมัดจำกุญแจ (เก็บตอนเช็คอิน คืนตอนเช็คเอ้าท์)</SectionTitle>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span className="tu-muted" style={{ fontSize: 13 }}>฿</span>
+            <input style={{ ...inputStyle, width: 120 }} type="number" value={cfg.keyDeposit ?? 200}
+              onChange={e => setCfg(c => ({ ...c, keyDeposit: Number(e.target.value) || 0 }))} />
           </div>
         </div>
 
@@ -7244,34 +7255,55 @@ function AdminBookings() {
 
 function CheckinModal({ tenant, onClose, onDone }) {
   const [depositPaid, setDepositPaid] = React.useState(true);
+  const [collectKeyDeposit, setCollectKeyDeposit] = React.useState(true);
   const [pm, setPm] = React.useState(RATE_CONFIG.paymentMethods[0]?.id || 'cash');
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState('');
   const room = ROOMS.find(r => r.id === (tenant.room_id || tenant.room));
   const deposit = Number(tenant.deposit) || 0;
+  const keyDepositAmt = Number(RATE_CONFIG.keyDeposit) || 0;
   const isMonthly = tenant.type === 'monthly';
   const rent = room?.rent || (isMonthly ? 4000 : 500);
   const today = new Date().toISOString().slice(0, 10);
   const dueD = new Date(); dueD.setDate(dueD.getDate() + 7);
   const thMonths = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
-  const period = `${thMonths[new Date().getMonth()]} ${new Date().getFullYear() + 543}`;
-  const invoiceItems = isMonthly ? [
-    { label: 'ค่าเช่า (เดือนแรก)', qty: 1, unit: 'เดือน', price: rent, amount: rent },
+  const diffDays = (d1, d2) => {
+    const p = s => { const [y,m,d] = s.slice(0,10).split('-').map(Number); return Date.UTC(y, m-1, d); };
+    return Math.round((p(d2) - p(d1)) / 86400000);
+  };
+  const checkIn = (tenant.check_in || tenant.checkIn || today).slice(0, 10);
+  const checkOutPlanned = (tenant.check_out || '').slice(0, 10);
+  const plannedNights = !isMonthly && checkOutPlanned ? Math.max(1, diffDays(checkIn, checkOutPlanned)) : null;
+  const period = isMonthly
+    ? `${thMonths[new Date().getMonth()]} ${new Date().getFullYear() + 543}`
+    : `${formatDate(checkIn)} – ${checkOutPlanned ? formatDate(checkOutPlanned) : '?'}`;
+  const baseAmount = isMonthly ? rent : (plannedNights || 1) * rent;
+  const baseLabel = isMonthly ? 'ค่าเช่า (เดือนแรก)' : `ค่าที่พักตามแผน ${plannedNights || 1} คืน (฿${rent.toLocaleString()}/คืน)`;
+  const invoiceItems = [
+    { label: baseLabel, qty: 1, unit: isMonthly ? 'เดือน' : 'รายการ', price: baseAmount, amount: baseAmount },
     ...(depositPaid && deposit > 0 ? [{ label: 'หักเงินมัดจำ', qty: 1, unit: 'ครั้ง', price: -deposit, amount: -deposit }] : []),
-  ] : [];
+  ];
   const invoiceTotal = Math.max(0, invoiceItems.reduce((s, i) => s + i.amount, 0));
 
   const doConfirm = async () => {
     setBusy(true); setErr('');
     try {
       const pmLabel = RATE_CONFIG.paymentMethods.find(p => p.id === pm)?.label || pm;
-      const noteAdd = depositPaid ? ` | ชำระมัดจำ ฿${deposit.toLocaleString()} ผ่าน${pmLabel}` : ' | ยังไม่ชำระมัดจำ';
+      const noteParts = [
+        depositPaid ? `ชำระมัดจำ ฿${deposit.toLocaleString()} ผ่าน${pmLabel}` : 'ยังไม่ชำระมัดจำ',
+        collectKeyDeposit && keyDepositAmt > 0 ? `รับมัดจำกุญแจ ฿${keyDepositAmt.toLocaleString()}` : null,
+      ].filter(Boolean);
+      const noteAdd = ' | ' + noteParts.join(' | ');
       if (window.sb) {
         const roomKey = tenant.room_id || tenant.room;
-        await window.sb.from('tenants').update({ status: 'occupied', notes: (tenant.notes || '') + noteAdd }).eq('id', tenant.id);
+        await window.sb.from('tenants').update({
+          status: 'occupied',
+          notes: (tenant.notes || '') + noteAdd,
+          key_deposit: collectKeyDeposit ? keyDepositAmt : 0,
+        }).eq('id', tenant.id);
         await window.sb.from('rooms').update({ status: 'occupied' }).eq('id', roomKey);
-        if (isMonthly && invoiceItems.length > 0) {
-          await createInvoiceInSB({ tenantId: tenant.id, roomId: roomKey, tenantName: tenant.name, type: 'monthly', period, issueDate: today, dueDate: dueD.toISOString().slice(0, 10), items: invoiceItems });
+        if (invoiceItems.length > 0) {
+          await createInvoiceInSB({ tenantId: tenant.id, roomId: roomKey, tenantName: tenant.name, type: tenant.type, period, issueDate: today, dueDate: dueD.toISOString().slice(0, 10), items: invoiceItems });
         }
         if (window.TU?.refreshData) await window.TU.refreshData();
       }
@@ -7317,9 +7349,24 @@ function CheckinModal({ tenant, onClose, onDone }) {
           </div>
         )}
 
-        {isMonthly && (
+        {keyDepositAmt > 0 && (
           <div>
-            <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 8 }}>ใบแจ้งหนี้เดือนแรก (สร้างอัตโนมัติ)</div>
+            <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 8 }}>เงินมัดจำกุญแจ ฿{keyDepositAmt.toLocaleString()} <span className="tu-muted" style={{ fontWeight: 400 }}>(แยกจากมัดจำจอง — คืนเมื่อเช็คเอ้าท์)</span></div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {[{v:true,t:'รับมัดจำกุญแจแล้ว'},{v:false,t:'ยังไม่รับมัดจำกุญแจ'}].map(o => (
+                <button key={String(o.v)} onClick={() => setCollectKeyDeposit(o.v)} style={{
+                  flex: 1, padding: '10px 0', borderRadius: 8, border: `2px solid ${collectKeyDeposit === o.v ? 'var(--primary)' : 'var(--border)'}`,
+                  background: collectKeyDeposit === o.v ? 'var(--primary-soft)' : 'var(--surface)', cursor: 'pointer', fontFamily: 'inherit',
+                  fontSize: 13, color: collectKeyDeposit === o.v ? 'var(--primary)' : 'var(--text)',
+                }}>{o.t}</button>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {invoiceItems.length > 0 && (
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 8 }}>{isMonthly ? 'ใบแจ้งหนี้เดือนแรก (สร้างอัตโนมัติ)' : 'ใบแจ้งหนี้ส่วนที่เหลือ (สร้างอัตโนมัติ)'}</div>
             <div style={{ background: 'var(--surface-2)', borderRadius: 10, overflow: 'hidden' }}>
               {invoiceItems.map((item, i) => (
                 <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 14px', borderBottom: i < invoiceItems.length - 1 ? '1px solid var(--border)' : 0, fontSize: 13 }}>
@@ -7328,7 +7375,7 @@ function CheckinModal({ tenant, onClose, onDone }) {
                 </div>
               ))}
               <div style={{ display: 'flex', justifyContent: 'space-between', padding: '11px 14px', fontWeight: 600, fontSize: 14, background: 'var(--surface)' }}>
-                <span>รวมที่ต้องชำระ</span>
+                <span>รวมที่ต้องชำระตอนนี้</span>
                 <span style={{ color: 'var(--primary)' }}>฿{invoiceTotal.toLocaleString()}</span>
               </div>
             </div>
@@ -7349,35 +7396,61 @@ function DailyCheckoutModal({ tenant, onClose, onDone }) {
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState('');
   const [invErr, setInvErr] = React.useState('');
+  const [loadingLedger, setLoadingLedger] = React.useState(true);
+  const [priorCollected, setPriorCollected] = React.useState(0); // sum of all invoices already issued to this tenant
   const room = ROOMS.find(r => r.id === (tenant.room_id || tenant.room));
   const rate = room?.rent || 500;
   const deposit = Number(tenant.deposit) || 0;
+  const depositCollected = tenant.notes?.includes('ชำระมัดจำ') ? deposit : 0;
+  const keyDeposit = Number(tenant.key_deposit) || 0;
+
+  React.useEffect(() => {
+    (async () => {
+      if (!window.sb) { setLoadingLedger(false); return; }
+      const { data } = await window.sb.from('invoices').select('total').eq('tenant_id', tenant.id);
+      setPriorCollected((data || []).reduce((s, r) => s + (Number(r.total) || 0), 0));
+      setLoadingLedger(false);
+    })();
+  }, [tenant.id]);
 
   const diffDays = (d1, d2) => {
     const p = s => { const [y,m,d] = s.slice(0,10).split('-').map(Number); return Date.UTC(y, m-1, d); };
     return Math.round((p(d2) - p(d1)) / 86400000);
   };
   const nights = Math.max(1, diffDays(checkIn, checkoutDate));
-  const rentTotal = nights * rate;
+  const actualCost = nights * rate;
+  const totalCollected = depositCollected + priorCollected; // already paid toward rent (booking deposit + check-in + extension invoices)
+  const rentBalance = actualCost - totalCollected; // >0 still owes rent, <0 overpaid
+  const netSettlement = rentBalance - keyDeposit; // >0 tenant must pay this now; <=0 refund the difference
+
   const items = [
-    { label: `ค่าที่พัก ${nights} คืน (฿${rate.toLocaleString()}/คืน)`, qty: nights, unit: 'คืน', price: rate, amount: rentTotal },
-    ...(deposit > 0 ? [{ label: 'หักเงินมัดจำ', qty: 1, unit: 'ครั้ง', price: -deposit, amount: -deposit }] : []),
+    { label: `ค่าที่พักจริง ${nights} คืน (฿${rate.toLocaleString()}/คืน)`, amount: actualCost },
+    ...(totalCollected > 0 ? [{ label: 'ชำระไปแล้ว (มัดจำจอง + ใบแจ้งหนี้ก่อนหน้า)', amount: -totalCollected }] : []),
+    ...(keyDeposit > 0 ? [{ label: 'เงินมัดจำกุญแจ', amount: -keyDeposit }] : []),
   ];
-  const total = Math.max(0, items.reduce((s, i) => s + i.amount, 0));
+  const owes = Math.max(0, netSettlement);
+  const refund = Math.max(0, -netSettlement);
 
   const doConfirm = async () => {
     setBusy(true); setErr(''); setInvErr('');
     try {
       const roomKey = tenant.room_id || tenant.room;
       if (window.sb) {
-        try {
-          await createInvoiceInSB({ tenantId: tenant.id, roomId: roomKey, tenantName: tenant.name, type: 'daily', period: `${formatDate(checkIn)} – ${formatDate(checkoutDate)}`, issueDate: today, dueDate: today, items });
-        } catch (invE) {
-          setInvErr('ไม่สามารถออกใบแจ้งหนี้ได้: ' + (invE.message || invE));
+        if (owes > 0) {
+          try {
+            await createInvoiceInSB({
+              tenantId: tenant.id, roomId: roomKey, tenantName: tenant.name, type: 'daily',
+              period: `${formatDate(checkIn)} – ${formatDate(checkoutDate)}`, issueDate: today, dueDate: today,
+              items: [{ label: `ส่วนที่ค้างชำระตอนเช็คเอ้าท์ (สุทธิหลังหักมัดจำกุญแจ)`, qty: 1, unit: 'รายการ', price: owes, amount: owes }],
+            });
+          } catch (invE) {
+            setInvErr('ไม่สามารถออกใบแจ้งหนี้ได้: ' + (invE.message || invE));
+          }
         }
+        const refundNote = refund > 0 ? ` | คืนเงิน ฿${refund.toLocaleString()} เมื่อเช็คเอ้าท์ (รวมมัดจำกุญแจ)` : owes === 0 ? ' | ชำระครบถ้วนเมื่อเช็คเอ้าท์' : '';
         // Don't set status='checked_out' — room_status enum doesn't have that value
         // Setting check_out date is enough to remove from active lists
-        const { error: upErr } = await window.sb.from('tenants').update({ check_out: checkoutDate }).eq('id', tenant.id);
+        const { error: upErr } = await window.sb.from('tenants').update({ check_out: checkoutDate, notes: (tenant.notes || '') + refundNote, key_deposit: 0 }).eq('id', tenant.id);
         if (upErr) throw upErr;
         await window.sb.from('rooms').update({ status: 'cleaning' }).eq('id', roomKey);
         if (window.TU?.refreshData) await window.TU.refreshData();
@@ -7389,7 +7462,7 @@ function DailyCheckoutModal({ tenant, onClose, onDone }) {
 
   return (
     <Modal open onClose={onClose} title={`เช็คเอ้าท์ — ห้อง ${tenant.room_id || tenant.room}`} width={440}
-      footer={<><Button variant="secondary" onClick={onClose} disabled={busy}>ยกเลิก</Button><Button onClick={doConfirm} disabled={busy}>{busy ? 'กำลังบันทึก...' : 'ยืนยัน + ออกใบแจ้งหนี้'}</Button></>}>
+      footer={<><Button variant="secondary" onClick={onClose} disabled={busy}>ยกเลิก</Button><Button onClick={doConfirm} disabled={busy || loadingLedger}>{busy ? 'กำลังบันทึก...' : loadingLedger ? 'กำลังโหลด...' : refund > 0 ? `ยืนยัน + คืนเงิน ฿${refund.toLocaleString()}` : owes > 0 ? `ยืนยัน + เก็บเพิ่ม ฿${owes.toLocaleString()}` : 'ยืนยันเช็คเอ้าท์'}</Button></>}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div style={{ padding: 14, background: 'var(--surface-2)', borderRadius: 10 }}>
           <div style={{ fontSize: 15, fontWeight: 600 }}>{tenant.name}</div>
@@ -7397,19 +7470,23 @@ function DailyCheckoutModal({ tenant, onClose, onDone }) {
         </div>
         <Input label="วันที่เช็คเอ้าท์" type="date" value={checkoutDate} onChange={setCheckoutDate} />
         <div>
-          <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 8 }}>สรุปค่าใช้จ่าย</div>
-          <div style={{ background: 'var(--surface-2)', borderRadius: 10, overflow: 'hidden' }}>
-            {items.map((item, i) => (
-              <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 14px', borderBottom: i < items.length - 1 ? '1px solid var(--border)' : 0, fontSize: 13 }}>
-                <span>{item.label}</span>
-                <span style={{ fontVariantNumeric: 'tabular-nums', color: item.amount < 0 ? '#b35a1f' : 'inherit' }}>{item.amount < 0 ? '−' : ''}฿{Math.abs(item.amount).toLocaleString()}</span>
+          <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 8 }}>สรุปการชำระเงินทั้งหมด</div>
+          {loadingLedger ? (
+            <div style={{ padding: 14, textAlign: 'center', color: 'var(--muted)', fontSize: 13 }}>กำลังตรวจสอบยอดที่ชำระไปแล้ว...</div>
+          ) : (
+            <div style={{ background: 'var(--surface-2)', borderRadius: 10, overflow: 'hidden' }}>
+              {items.map((item, i) => (
+                <div key={i} style={{ display: 'flex', justifyContent: 'space-between', padding: '9px 14px', borderBottom: '1px solid var(--border)', fontSize: 13 }}>
+                  <span>{item.label}</span>
+                  <span style={{ fontVariantNumeric: 'tabular-nums', color: item.amount < 0 ? '#b35a1f' : 'inherit' }}>{item.amount < 0 ? '−' : ''}฿{Math.abs(item.amount).toLocaleString()}</span>
+                </div>
+              ))}
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '11px 14px', fontWeight: 600, fontSize: 14, background: 'var(--surface)' }}>
+                <span>{refund > 0 ? 'ต้องคืนเงินให้ผู้เช่า' : 'ยอดที่ต้องเก็บเพิ่ม'}</span>
+                <span style={{ color: refund > 0 ? '#16a34a' : 'var(--primary)' }}>฿{(refund > 0 ? refund : owes).toLocaleString()}</span>
               </div>
-            ))}
-            <div style={{ display: 'flex', justifyContent: 'space-between', padding: '11px 14px', fontWeight: 600, fontSize: 14, background: 'var(--surface)' }}>
-              <span>รวมที่ต้องชำระ</span>
-              <span style={{ color: 'var(--primary)' }}>฿{total.toLocaleString()}</span>
             </div>
-          </div>
+          )}
         </div>
         {invErr && <div style={{ fontSize: 12, color: '#b45309', background: '#fef3c7', padding: '8px 12px', borderRadius: 8 }}>{invErr}</div>}
         {err && <div style={{ fontSize: 12.5, color: '#dc2626' }}>{err}</div>}
