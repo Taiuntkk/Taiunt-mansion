@@ -7234,9 +7234,9 @@ function AdminBookings() {
         </Card>
       )}
 
-      {checkinTarget && <CheckinModal tenant={checkinTarget} onClose={() => setCheckinTarget(null)} onDone={afterAction} />}
-      {checkoutTarget && <DailyCheckoutModal tenant={checkoutTarget} onClose={() => setCheckoutTarget(null)} onDone={afterAction} />}
-      {extendTarget && <ExtendStayModal tenant={extendTarget} onClose={() => setExtendTarget(null)} onDone={afterAction} />}
+      {checkinTarget && <CheckinModal tenant={checkinTarget} onClose={() => setCheckinTarget(null)} onDone={() => { setCheckinTarget(null); afterAction(); }} />}
+      {checkoutTarget && <DailyCheckoutModal tenant={checkoutTarget} onClose={() => setCheckoutTarget(null)} onDone={() => { setCheckoutTarget(null); afterAction(); }} />}
+      {extendTarget && <ExtendStayModal tenant={extendTarget} onClose={() => setExtendTarget(null)} onDone={() => { setExtendTarget(null); afterAction(); }} />}
       {showCreate && <CreateBookingModal onClose={() => setShowCreate(false)} onDone={() => { setShowCreate(false); afterAction(); }} />}
     </div>
   );
