@@ -7256,12 +7256,12 @@ function AdminBookings() {
 function CheckinModal({ tenant, onClose, onDone }) {
   const [depositPaid, setDepositPaid] = React.useState(true);
   const [collectKeyDeposit, setCollectKeyDeposit] = React.useState(true);
+  const [keyDepositAmt, setKeyDepositAmt] = React.useState(Number(RATE_CONFIG.keyDeposit) || 0);
   const [pm, setPm] = React.useState(RATE_CONFIG.paymentMethods[0]?.id || 'cash');
   const [busy, setBusy] = React.useState(false);
   const [err, setErr] = React.useState('');
   const room = ROOMS.find(r => r.id === (tenant.room_id || tenant.room));
   const deposit = Number(tenant.deposit) || 0;
-  const keyDepositAmt = Number(RATE_CONFIG.keyDeposit) || 0;
   const isMonthly = tenant.type === 'monthly';
   const rent = room?.rent || (isMonthly ? 4000 : 500);
   const today = new Date().toISOString().slice(0, 10);
@@ -7349,20 +7349,25 @@ function CheckinModal({ tenant, onClose, onDone }) {
           </div>
         )}
 
-        {keyDepositAmt > 0 && (
-          <div>
-            <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 8 }}>เงินมัดจำกุญแจ ฿{keyDepositAmt.toLocaleString()} <span className="tu-muted" style={{ fontWeight: 400 }}>(แยกจากมัดจำจอง — คืนเมื่อเช็คเอ้าท์)</span></div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              {[{v:true,t:'รับมัดจำกุญแจแล้ว'},{v:false,t:'ยังไม่รับมัดจำกุญแจ'}].map(o => (
-                <button key={String(o.v)} onClick={() => setCollectKeyDeposit(o.v)} style={{
-                  flex: 1, padding: '10px 0', borderRadius: 8, border: `2px solid ${collectKeyDeposit === o.v ? 'var(--primary)' : 'var(--border)'}`,
-                  background: collectKeyDeposit === o.v ? 'var(--primary-soft)' : 'var(--surface)', cursor: 'pointer', fontFamily: 'inherit',
-                  fontSize: 13, color: collectKeyDeposit === o.v ? 'var(--primary)' : 'var(--text)',
-                }}>{o.t}</button>
-              ))}
-            </div>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 8 }}>เงินมัดจำกุญแจ <span className="tu-muted" style={{ fontWeight: 400 }}>(แยกจากมัดจำจอง — คืนเมื่อเช็คเอ้าท์)</span></div>
+          <div style={{ display: 'flex', gap: 8, marginBottom: collectKeyDeposit ? 8 : 0 }}>
+            {[{v:true,t:'รับมัดจำกุญแจ'},{v:false,t:'ไม่เก็บมัดจำกุญแจ'}].map(o => (
+              <button key={String(o.v)} onClick={() => setCollectKeyDeposit(o.v)} style={{
+                flex: 1, padding: '10px 0', borderRadius: 8, border: `2px solid ${collectKeyDeposit === o.v ? 'var(--primary)' : 'var(--border)'}`,
+                background: collectKeyDeposit === o.v ? 'var(--primary-soft)' : 'var(--surface)', cursor: 'pointer', fontFamily: 'inherit',
+                fontSize: 13, color: collectKeyDeposit === o.v ? 'var(--primary)' : 'var(--text)',
+              }}>{o.t}</button>
+            ))}
           </div>
-        )}
+          {collectKeyDeposit && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span className="tu-muted" style={{ fontSize: 13 }}>฿</span>
+              <input type="number" value={keyDepositAmt} onChange={e => setKeyDepositAmt(Number(e.target.value) || 0)}
+                style={{ flex: 1, height: 38, border: '1px solid var(--border)', borderRadius: 8, padding: '0 10px', fontSize: 13, fontFamily: 'inherit', background: 'var(--surface)', color: 'var(--text)', outline: 'none' }} />
+            </div>
+          )}
+        </div>
 
         {invoiceItems.length > 0 && (
           <div>
