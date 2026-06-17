@@ -7411,11 +7411,13 @@ function DailyCheckoutModal({ tenant, onClose, onDone }) {
   const [invErr, setInvErr] = React.useState('');
   const [loadingLedger, setLoadingLedger] = React.useState(true);
   const [priorCollected, setPriorCollected] = React.useState(0); // sum of all invoices already issued to this tenant
+  const [keyLost, setKeyLost] = React.useState(false);
   const room = ROOMS.find(r => r.id === (tenant.room_id || tenant.room));
   const rate = room?.rent || 500;
   const deposit = Number(tenant.deposit) || 0;
   const depositCollected = tenant.notes?.includes('ชำระมัดจำ') ? deposit : 0;
   const keyDeposit = Number(tenant.key_deposit) || 0;
+  const [keyLostFee, setKeyLostFee] = React.useState(Number(RATE_CONFIG.keyDeposit) || 200);
 
   React.useEffect(() => {
     (async () => {
@@ -7434,12 +7436,18 @@ function DailyCheckoutModal({ tenant, onClose, onDone }) {
   const actualCost = nights * rate;
   const totalCollected = depositCollected + priorCollected; // already paid toward rent (booking deposit + check-in + extension invoices)
   const rentBalance = actualCost - totalCollected; // >0 still owes rent, <0 overpaid
-  const netSettlement = rentBalance - keyDeposit; // >0 tenant must pay this now; <=0 refund the difference
+  // Key returned: refund/apply the key deposit as usual.
+  // Key lost: forfeit the key deposit (no refund); if no key deposit was ever collected, charge the loss fee instead.
+  const keyLossCharge = keyLost ? (keyDeposit > 0 ? 0 : keyLostFee) : 0;
+  const keyRefundCredit = keyLost ? 0 : keyDeposit;
+  const netSettlement = rentBalance - keyRefundCredit + keyLossCharge;
 
   const items = [
     { label: `ค่าที่พักจริง ${nights} คืน (฿${rate.toLocaleString()}/คืน)`, amount: actualCost },
     ...(totalCollected > 0 ? [{ label: 'ชำระไปแล้ว (มัดจำจอง + ใบแจ้งหนี้ก่อนหน้า)', amount: -totalCollected }] : []),
-    ...(keyDeposit > 0 ? [{ label: 'เงินมัดจำกุญแจ', amount: -keyDeposit }] : []),
+    ...(!keyLost && keyDeposit > 0 ? [{ label: 'เงินมัดจำกุญแจ (คืนให้)', amount: -keyDeposit }] : []),
+    ...(keyLost && keyDeposit > 0 ? [{ label: 'เงินมัดจำกุญแจ (ริบ — กุญแจหาย)', amount: 0 }] : []),
+    ...(keyLost && keyDeposit === 0 ? [{ label: 'ค่าปรับกุญแจหาย (ไม่มีมัดจำกุญแจไว้)', amount: keyLostFee }] : []),
   ];
   const owes = Math.max(0, netSettlement);
   const refund = Math.max(0, -netSettlement);
@@ -7460,7 +7468,10 @@ function DailyCheckoutModal({ tenant, onClose, onDone }) {
             setInvErr('ไม่สามารถออกใบแจ้งหนี้ได้: ' + (invE.message || invE));
           }
         }
-        const refundNote = refund > 0 ? ` | คืนเงิน ฿${refund.toLocaleString()} เมื่อเช็คเอ้าท์ (รวมมัดจำกุญแจ)` : owes === 0 ? ' | ชำระครบถ้วนเมื่อเช็คเอ้าท์' : '';
+        const keyNote = keyLost
+          ? (keyDeposit > 0 ? ` | กุญแจหาย — ริบมัดจำกุญแจ ฿${keyDeposit.toLocaleString()}` : ` | กุญแจหาย — เก็บค่าปรับ ฿${keyLostFee.toLocaleString()} (ไม่มีมัดจำกุญแจ)`)
+          : keyDeposit > 0 ? ` | คืนมัดจำกุญแจ ฿${keyDeposit.toLocaleString()}` : '';
+        const refundNote = (refund > 0 ? ` | คืนเงิน ฿${refund.toLocaleString()} เมื่อเช็คเอ้าท์` : owes === 0 ? ' | ชำระครบถ้วนเมื่อเช็คเอ้าท์' : '') + keyNote;
         // Don't set status='checked_out' — room_status enum doesn't have that value
         // Setting check_out date is enough to remove from active lists
         const { error: upErr } = await window.sb.from('tenants').update({ check_out: checkoutDate, notes: (tenant.notes || '') + refundNote, key_deposit: 0 }).eq('id', tenant.id);
@@ -7482,6 +7493,29 @@ function DailyCheckoutModal({ tenant, onClose, onDone }) {
           <div className="tu-muted" style={{ fontSize: 13 }}>เข้าพักตั้งแต่ {formatDate(checkIn)}</div>
         </div>
         <Input label="วันที่เช็คเอ้าท์" type="date" value={checkoutDate} onChange={setCheckoutDate} />
+
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 8 }}>
+            สถานะกุญแจ {keyDeposit > 0 && <span className="tu-muted" style={{ fontWeight: 400 }}>(มัดจำไว้ ฿{keyDeposit.toLocaleString()})</span>}
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {[{v:false,t:'คืนกุญแจครบ'},{v:true,t:'กุญแจหาย'}].map(o => (
+              <button key={String(o.v)} onClick={() => setKeyLost(o.v)} style={{
+                flex: 1, padding: '10px 0', borderRadius: 8, border: `2px solid ${keyLost === o.v ? (o.v ? '#dc2626' : 'var(--primary)') : 'var(--border)'}`,
+                background: keyLost === o.v ? (o.v ? 'rgba(220,38,38,.08)' : 'var(--primary-soft)') : 'var(--surface)', cursor: 'pointer', fontFamily: 'inherit',
+                fontSize: 13, color: keyLost === o.v ? (o.v ? '#dc2626' : 'var(--primary)') : 'var(--text)',
+              }}>{o.t}</button>
+            ))}
+          </div>
+          {keyLost && keyDeposit === 0 && (
+            <div style={{ marginTop: 8, display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span className="tu-muted" style={{ fontSize: 12.5 }}>ไม่มีมัดจำกุญแจไว้ — ค่าปรับ ฿</span>
+              <input type="number" value={keyLostFee} onChange={e => setKeyLostFee(Number(e.target.value) || 0)}
+                style={{ width: 90, height: 32, border: '1px solid var(--border)', borderRadius: 8, padding: '0 8px', fontSize: 13, fontFamily: 'inherit', background: 'var(--surface)', color: 'var(--text)', outline: 'none' }} />
+            </div>
+          )}
+        </div>
+
         <div>
           <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 8 }}>สรุปการชำระเงินทั้งหมด</div>
           {loadingLedger ? (
