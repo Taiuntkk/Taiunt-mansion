@@ -4070,20 +4070,46 @@ function openInvoiceWindow(invoice) {
   w.document.close();
 }
 
+function mapInvoiceRow(row) {
+  return {
+    id: row.id,
+    tenantId: row.tenant_id,
+    tenantName: row.tenant_name || '—',
+    room: row.room_id || row.room || '—',
+    type: row.type,
+    period: row.period,
+    issueDate: row.issue_date,
+    dueDate: row.due_date,
+    total: Number(row.total) || 0,
+    status: row.status,
+    paidAt: row.paid_at,
+    paymentMethod: row.payment_method,
+    items: row.items || [],
+  };
+}
+
 function AdminBilling() {
   const [mode, setMode] = React.useState('invoices');
   const [filter, setFilter] = React.useState('all');
   const [selected, setSelected] = React.useState(null);
-  const [, forceUpdate] = React.useReducer(x => x + 1, 0);
+  const [invoices, setInvoices] = React.useState(null);
 
-  const filtered = filter === 'all' ? INVOICES : INVOICES.filter(i => i.status === filter);
+  const load = React.useCallback(async () => {
+    if (!window.sb) { setInvoices(INVOICES); return; }
+    const { data } = await window.sb.from('invoices').select('*').order('issue_date', { ascending: false }).limit(300);
+    setInvoices((data || []).map(mapInvoiceRow));
+  }, []);
+  React.useEffect(() => { load(); }, [load]);
+
+  const list = invoices || [];
+  const filtered = filter === 'all' ? list : list.filter(i => i.status === filter);
   const stats = {
-    paid: INVOICES.filter(i => i.status === 'paid').length,
-    pending: INVOICES.filter(i => i.status === 'pending').length,
-    overdue: INVOICES.filter(i => i.status === 'overdue').length,
+    paid: list.filter(i => i.status === 'paid').length,
+    pending: list.filter(i => i.status === 'pending').length,
+    overdue: list.filter(i => i.status === 'overdue').length,
   };
-  const totalPaid = INVOICES.filter(i => i.status === 'paid').reduce((s, i) => s + i.total, 0);
-  const totalDue = INVOICES.filter(i => i.status !== 'paid').reduce((s, i) => s + i.total, 0);
+  const totalPaid = list.filter(i => i.status === 'paid').reduce((s, i) => s + i.total, 0);
+  const totalDue = list.filter(i => i.status !== 'paid').reduce((s, i) => s + i.total, 0);
 
   return (
     <div className="tu-page">
@@ -4101,19 +4127,21 @@ function AdminBilling() {
         ]} />
       </div>
 
-      {mode === 'meter' ? <MeterReading /> : (
+      {mode === 'meter' ? <MeterReading /> : invoices === null ? (
+        <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลดใบแจ้งหนี้...</div>
+      ) : (
       <>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
-        <Stat label="ชำระแล้วเดือนนี้" value={`฿${totalPaid.toLocaleString()}`} sub={`${stats.paid} ใบเสร็จ`} tone="primary" icon={I.check} />
+        <Stat label="ชำระแล้ว" value={`฿${totalPaid.toLocaleString()}`} sub={`${stats.paid} ใบเสร็จ`} tone="primary" icon={I.check} />
         <Stat label="ค้างชำระ" value={`฿${totalDue.toLocaleString()}`} sub={`${stats.pending + stats.overdue} ใบ`} icon={I.bell} />
-        <Stat label="ครบกำหนดสัปดาห์นี้" value={INVOICES.filter(i => i.status === 'pending').length} sub="ภายใน 5 มิ.ย." icon={I.billing} />
+        <Stat label="รอชำระ" value={stats.pending} sub="ยังไม่ครบกำหนด" icon={I.billing} />
         <Stat label="เกินกำหนด" value={stats.overdue} sub="ต้องติดตาม" icon={I.bell} />
       </div>
 
       <Card padding={0} style={{ marginTop: 16 }}>
         <div style={{ display: 'flex', padding: 16, borderBottom: '1px solid var(--border)', alignItems: 'center', gap: 12 }}>
           <Tabs value={filter} onChange={setFilter} options={[
-            { value: 'all', label: 'ทั้งหมด', count: INVOICES.length },
+            { value: 'all', label: 'ทั้งหมด', count: list.length },
             { value: 'pending', label: 'รอชำระ', count: stats.pending },
             { value: 'overdue', label: 'เกินกำหนด', count: stats.overdue },
             { value: 'paid', label: 'ชำระแล้ว', count: stats.paid },
@@ -4123,6 +4151,9 @@ function AdminBilling() {
             <Input prefix={I.search} placeholder="ค้นหาเลขที่ใบแจ้งหนี้, ห้อง..." value="" onChange={()=>{}} />
           </div>
         </div>
+        {filtered.length === 0 ? (
+          <EmptyState icon={I.billing} title="ไม่มีใบแจ้งหนี้ในรายการนี้" />
+        ) : (
         <table className="tu-table">
           <thead>
             <tr><th>เลขที่</th><th>ผู้เช่า</th><th>ห้อง</th><th>งวด</th><th>ออกใบ</th><th>ครบกำหนด</th>
@@ -4150,11 +4181,15 @@ function AdminBilling() {
             ))}
           </tbody>
         </table>
+        )}
       </Card>
       </>
       )}
 
-      <InvoiceModal invoice={selected} onClose={() => setSelected(null)} onPaid={(inv) => { forceUpdate(); }} />
+      <InvoiceModal invoice={selected} onClose={() => setSelected(null)} onPaid={(inv) => {
+        setInvoices(prev => (prev || []).map(x => x.id === inv.id ? { ...x, status: inv.status, paidAt: inv.paidAt, paymentMethod: inv.paymentMethod } : x));
+        setSelected(null);
+      }} />
     </div>
   );
 }
@@ -4326,8 +4361,24 @@ function meterInputStyle(error) {
 function InvoiceModal({ invoice, onClose, onPaid }) {
   const [paying, setPaying] = React.useState(false);
   const [method, setMethod] = React.useState('qr');
+  const [saving, setSaving] = React.useState(false);
+  React.useEffect(() => { setPaying(false); }, [invoice?.id]);
   if (!invoice) return null;
   const isPaid = invoice.status === 'paid';
+
+  const confirmPaid = async () => {
+    setSaving(true);
+    const now = new Date().toISOString().slice(0, 10);
+    const paymentMethod = { qr: 'QR PromptPay', bank: 'โอนธนาคาร', cash: 'เงินสด' }[method];
+    if (window.sb) {
+      await window.sb.from('invoices').update({ status: 'paid', paid_at: now, payment_method: paymentMethod }).eq('id', invoice.id);
+    }
+    invoice.status = 'paid';
+    invoice.paidAt = now;
+    invoice.paymentMethod = paymentMethod;
+    setSaving(false);
+    onPaid(invoice);
+  };
 
   return (
     <Modal open={!!invoice} onClose={onClose}
@@ -4371,13 +4422,7 @@ function InvoiceModal({ invoice, onClose, onPaid }) {
               <div className="tu-muted" style={{ fontSize: 12 }}>ยอดที่รับชำระ</div>
               <div style={{ fontSize: 22, fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>฿{invoice.total.toLocaleString()}</div>
             </div>
-            <Button onClick={() => {
-              const now = new Date().toISOString().slice(0, 10);
-              invoice.status = 'paid';
-              invoice.paidAt = now;
-              invoice.paymentMethod = { qr: 'QR PromptPay', bank: 'โอนธนาคาร', cash: 'เงินสด' }[method];
-              onPaid(invoice);
-            }} icon={I.check}>ยืนยันรับชำระ</Button>
+            <Button onClick={confirmPaid} disabled={saving} icon={I.check}>{saving ? 'กำลังบันทึก...' : 'ยืนยันรับชำระ'}</Button>
           </div>
         </div>
       ) : (
@@ -5878,6 +5923,144 @@ function PnLBar({ label, value, max, color }) {
 
 Object.assign(window, { AdminFinance });
 
+// Cash receipts report — รายงานการรับเงิน (รายวัน / รายเดือน) จากใบแจ้งหนี้ที่ชำระแล้วจริงใน Supabase
+
+function monthEndStr(ym) {
+  const [y, m] = ym.split('-').map(Number);
+  const d = new Date(y, m, 0); // day 0 of next month = last day of this month
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+function AdminCashReport() {
+  const todayStr = new Date().toISOString().slice(0, 10);
+  const thisMonthStr = todayStr.slice(0, 7);
+  const [mode, setMode] = React.useState('daily');
+  const [date, setDate] = React.useState(todayStr);
+  const [month, setMonth] = React.useState(thisMonthStr);
+  const [rows, setRows] = React.useState(null);
+
+  const rangeStart = mode === 'daily' ? date : `${month}-01`;
+  const rangeEnd = mode === 'daily' ? date : monthEndStr(month);
+
+  React.useEffect(() => {
+    let active = true;
+    setRows(null);
+    (async () => {
+      if (!window.sb) { if (active) setRows([]); return; }
+      const { data } = await window.sb.from('invoices').select('*')
+        .eq('status', 'paid').gte('paid_at', rangeStart).lte('paid_at', rangeEnd)
+        .order('paid_at', { ascending: false });
+      if (active) setRows((data || []).map(mapInvoiceRow));
+    })();
+    return () => { active = false; };
+  }, [rangeStart, rangeEnd]);
+
+  const list = rows || [];
+  const total = list.reduce((s, r) => s + r.total, 0);
+  const count = list.length;
+  const byMethod = {};
+  list.forEach(r => { const k = r.paymentMethod || 'ไม่ระบุช่องทาง'; byMethod[k] = (byMethod[k] || 0) + r.total; });
+  const methodMax = Math.max(1, ...Object.values(byMethod));
+  const byDay = {};
+  list.forEach(r => { const d = (r.paidAt || '').slice(0, 10); byDay[d] = (byDay[d] || 0) + r.total; });
+  const byDayEntries = Object.entries(byDay).sort((a, b) => a[0].localeCompare(b[0]));
+  const dayMax = Math.max(1, ...Object.values(byDay));
+
+  const exportCSV = () => {
+    const rowsOut = [['เลขที่ใบเสร็จ', 'ผู้เช่า', 'ห้อง', 'ประเภท', 'งวด', 'วันที่ชำระ', 'ช่องทาง', 'ยอด (฿)']];
+    list.forEach(inv => rowsOut.push([inv.id, inv.tenantName, inv.room, inv.type === 'monthly' ? 'รายเดือน' : 'รายวัน', inv.period, inv.paidAt || '', inv.paymentMethod || '', inv.total]));
+    rowsOut.push(['', '', '', '', '', '', 'รวม', total]);
+    const csv = '﻿' + rowsOut.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
+    a.download = `รายงานการรับเงิน-${mode === 'daily' ? date : month}.csv`;
+    a.click();
+  };
+
+  return (
+    <div className="tu-page">
+      <PageHeader title="รายงานการรับเงิน" subtitle="Cash Receipts — สรุปยอดรับเงินจากใบเสร็จที่ชำระแล้วจริง รายวันและรายเดือน"
+        actions={<Button variant="secondary" size="sm" icon={I.download} onClick={exportCSV} disabled={count === 0}>ดาวน์โหลด CSV</Button>}
+      />
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+        <Tabs value={mode} onChange={setMode} options={[
+          { value: 'daily', label: 'รายวัน' },
+          { value: 'monthly', label: 'รายเดือน' },
+        ]} />
+        <div style={{ width: 200 }}>
+          {mode === 'daily'
+            ? <Input type="date" value={date} onChange={setDate} />
+            : <Input type="month" value={month} onChange={setMonth} />}
+        </div>
+        <Button variant="secondary" size="sm" onClick={() => mode === 'daily' ? setDate(todayStr) : setMonth(thisMonthStr)}>
+          {mode === 'daily' ? 'วันนี้' : 'เดือนนี้'}
+        </Button>
+      </div>
+
+      {rows === null ? (
+        <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลดข้อมูล...</div>
+      ) : (
+      <>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
+          <Stat label="ยอดรับเงินรวม" value={`฿${total.toLocaleString()}`} sub={mode === 'daily' ? formatDate(date) : `${month}`} tone="primary" icon={I.check} />
+          <Stat label="จำนวนใบเสร็จ" value={count} sub="รายการที่ชำระแล้ว" icon={I.billing} />
+          <Stat label="เฉลี่ยต่อใบเสร็จ" value={`฿${count ? Math.round(total / count).toLocaleString() : 0}`} icon={I.finance} />
+        </div>
+
+        {count === 0 ? (
+          <Card style={{ marginTop: 16 }}>
+            <EmptyState icon={I.billing} title="ไม่มีรายการรับเงินในช่วงนี้" />
+          </Card>
+        ) : (
+        <>
+        <div style={{ display: 'grid', gridTemplateColumns: mode === 'monthly' ? '1fr 1fr' : '1fr', gap: 16, marginTop: 16 }}>
+          <Card>
+            <SectionTitle>แยกตามช่องทางการชำระ</SectionTitle>
+            {Object.entries(byMethod).map(([k, v]) => (
+              <PnLBar key={k} label={k} value={v} max={methodMax} color="var(--primary)" />
+            ))}
+          </Card>
+          {mode === 'monthly' && (
+            <Card>
+              <SectionTitle>แยกตามวัน</SectionTitle>
+              {byDayEntries.map(([d, v]) => (
+                <PnLBar key={d} label={formatDate(d)} value={v} max={dayMax} color="var(--accent)" />
+              ))}
+            </Card>
+          )}
+        </div>
+
+        <Card padding={0} style={{ marginTop: 16 }}>
+          <table className="tu-table">
+            <thead>
+              <tr><th>เลขที่ใบเสร็จ</th><th>ผู้เช่า</th><th>ห้อง</th><th>งวด</th><th>วันที่ชำระ</th><th>ช่องทาง</th><th style={{ textAlign: 'right' }}>ยอด (฿)</th></tr>
+            </thead>
+            <tbody>
+              {list.map(inv => (
+                <tr key={inv.id} className="tu-row-hover">
+                  <td style={{ fontFamily: 'ui-monospace,monospace', fontSize: 11.5 }}>{inv.id}</td>
+                  <td style={{ fontWeight: 500 }}>{inv.tenantName}</td>
+                  <td><Badge tone="neutral">{inv.room}</Badge></td>
+                  <td className="tu-muted">{inv.period}</td>
+                  <td className="tu-muted">{formatDate(inv.paidAt)}</td>
+                  <td className="tu-muted">{inv.paymentMethod || '—'}</td>
+                  <td style={{ textAlign: 'right', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>฿{inv.total.toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </Card>
+        </>
+        )}
+      </>
+      )}
+    </div>
+  );
+}
+
+Object.assign(window, { AdminCashReport });
+
 // Mini-mart / convenience shop — สินค้า, ซื้อเข้า, ขายออก, ยอดขาย, ตรวจสอบสต็อก
 
 function AdminShop() {
@@ -7017,6 +7200,7 @@ function App() {
               {route === 'tenants' && <AdminTenants />}
               {route === 'assets' && <AdminAssets />}
               {route === 'billing' && <AdminBilling />}
+              {route === 'cashreport' && <AdminCashReport />}
               {route === 'repairs' && <AdminRepairs />}
               {route === 'stock' && <AdminStock />}
               {route === 'workorders' && <AdminWorkOrders />}
@@ -7808,6 +7992,7 @@ function Sidebar({ route, onNav }) {
   { v: 'tenants', icon: I.tenants, label: 'Tenants', th: 'ผู้เข้าพัก' },
   { v: 'assets', icon: I.assets, label: 'Assets', th: 'ทรัพย์สิน' },
   { v: 'billing', icon: I.billing, label: 'Billing', th: 'ใบแจ้งหนี้' },
+  { v: 'cashreport', icon: I.finance, label: 'Cash Receipts', th: 'รายงานการรับเงิน' },
   { v: 'repairs', icon: I.repairs, label: 'Maintenance', th: 'แจ้งซ่อม' },
   { v: 'stock', icon: I.stock, label: 'Stock', th: 'คลังอุปกรณ์' },
   { v: 'workorders', icon: I.workorder, label: 'Work Orders', th: 'งานจ้างซ่อม' },
