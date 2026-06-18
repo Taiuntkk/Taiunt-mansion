@@ -2525,6 +2525,160 @@ function AdminRooms({ goto }) {
   );
 }
 
+// ─── Date-aware room status calendar (ปฏิทินห้อง) ─────────────────────────
+function dateKey(d) { return d.toISOString().slice(0, 10); }
+function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
+
+function AdminRoomCalendar({ goto }) {
+  const [filterType, setFilterType] = React.useState('daily');
+  const [anchor, setAnchor] = React.useState(() => { const d = new Date(); d.setHours(0,0,0,0); return d; });
+  const [logRows, setLogRows] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+  const [selected, setSelected] = React.useState(null);
+  const todayKey = dateKey(new Date());
+
+  const DAYS_BACK = 7, DAYS_FWD = 13;
+  const days = React.useMemo(() => {
+    const start = addDays(anchor, -DAYS_BACK);
+    return Array.from({ length: DAYS_BACK + DAYS_FWD + 1 }, (_, i) => addDays(start, i));
+  }, [anchor]);
+
+  React.useEffect(() => {
+    (async () => {
+      if (!window.sb) { setLoading(false); return; }
+      setLoading(true);
+      const { data } = await window.sb.from('room_status_log').select('*')
+        .gte('effective_date', dateKey(addDays(anchor, -DAYS_BACK - 60)))
+        .lte('effective_date', dateKey(addDays(anchor, DAYS_FWD)))
+        .order('effective_date', { ascending: true });
+      setLogRows(data || []);
+      setLoading(false);
+    })();
+  }, [anchor]);
+
+  // room_id -> sorted [{effective_date, status}] (entries on/before "today" only matter for past lookups)
+  const logByRoom = React.useMemo(() => {
+    const m = {};
+    logRows.forEach(r => { (m[r.room_id] = m[r.room_id] || []).push(r); });
+    return m;
+  }, [logRows]);
+
+  const statusOnDate = (room, dKey) => {
+    if (dKey > todayKey) {
+      // Future: derive from the live booking we already know about
+      const tenant = TENANTS.find(t => t.room === room.id);
+      if (tenant) {
+        const inOk = !tenant.checkIn || dKey >= tenant.checkIn.slice(0, 10);
+        const outOk = !tenant.checkOut || dKey <= tenant.checkOut.slice(0, 10);
+        if (inOk && outOk) return tenant.status;
+        return 'vacant';
+      }
+      return room.status === 'booked' || room.status === 'occupied' ? 'vacant' : room.status;
+    }
+    if (dKey === todayKey) return room.status;
+    // Past: latest logged status on/before that date
+    const entries = logByRoom[room.id];
+    if (!entries || entries.length === 0) return null;
+    let best = null;
+    for (const e of entries) {
+      if (e.effective_date <= dKey && (!best || e.effective_date > best.effective_date)) best = e;
+    }
+    return best ? best.status : null;
+  };
+
+  const rooms = ROOMS.filter(r => filterType === 'all' || r.type === filterType).sort((a, b) => a.id.localeCompare(b.id));
+
+  const thWeekday = ['อา','จ','อ','พ','พฤ','ศ','ส'];
+
+  return (
+    <div className="tu-page">
+      <PageHeader title="ปฏิทินห้อง" subtitle="Room Calendar — ดูสถานะห้องรายวัน ย้อนดูประวัติ และดูช่วงการจองหลายวัน"
+        actions={<>
+          <Button variant="secondary" size="sm" onClick={() => setAnchor(d => addDays(d, -7))}>← สัปดาห์ก่อน</Button>
+          <Button variant="secondary" size="sm" onClick={() => { const d = new Date(); d.setHours(0,0,0,0); setAnchor(d); }}>วันนี้</Button>
+          <Button variant="secondary" size="sm" onClick={() => setAnchor(d => addDays(d, 7))}>สัปดาห์หน้า →</Button>
+        </>}
+      />
+
+      <Card padding={16}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'center' }}>
+          <Tabs value={filterType} onChange={setFilterType} options={[
+            { value: 'daily', label: 'รายวัน' },
+            { value: 'monthly', label: 'รายเดือน' },
+            { value: 'all', label: 'ทั้งหมด' },
+          ]} />
+          <div style={{ flex: 1 }} />
+          <RoomLegend />
+        </div>
+      </Card>
+
+      <Card padding={0} style={{ overflowX: 'auto' }}>
+        <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 12.5 }}>
+          <thead>
+            <tr>
+              <th style={{ position: 'sticky', left: 0, background: 'var(--surface)', zIndex: 2, padding: '10px 14px', textAlign: 'left', borderBottom: '1px solid var(--border)', minWidth: 90 }}>ห้อง</th>
+              {days.map(d => {
+                const k = dateKey(d);
+                const isToday = k === todayKey;
+                return (
+                  <th key={k} style={{
+                    padding: '8px 6px', textAlign: 'center', borderBottom: '1px solid var(--border)',
+                    background: isToday ? 'var(--primary-soft)' : 'var(--surface)', minWidth: 54,
+                    color: isToday ? 'var(--primary)' : 'var(--text)',
+                  }}>
+                    <div style={{ fontSize: 11, opacity: .7 }}>{thWeekday[d.getDay()]}</div>
+                    <div style={{ fontWeight: 600 }}>{d.getDate()}/{d.getMonth() + 1}</div>
+                  </th>
+                );
+              })}
+            </tr>
+          </thead>
+          <tbody>
+            {rooms.map(r => (
+              <tr key={r.id}>
+                <td style={{ position: 'sticky', left: 0, background: 'var(--surface)', zIndex: 1, padding: '8px 14px', borderBottom: '1px solid var(--border)', fontWeight: 600 }}>
+                  {r.id}
+                  <div className="tu-muted" style={{ fontSize: 10.5, fontWeight: 400 }}>ชั้น {r.floor} • {r.type === 'monthly' ? 'รายเดือน' : 'รายวัน'}</div>
+                </td>
+                {days.map(d => {
+                  const k = dateKey(d);
+                  const st = statusOnDate(r, k);
+                  const isToday = k === todayKey;
+                  return (
+                    <td key={k} title={st ? STATUS_META[st]?.th : 'ไม่มีข้อมูล'}
+                      onClick={() => { if (isToday) setSelected(r); }}
+                      style={{
+                        borderBottom: '1px solid var(--border)', textAlign: 'center', padding: 6,
+                        cursor: isToday ? 'pointer' : 'default',
+                        outline: isToday ? '2px solid var(--primary)' : 'none', outlineOffset: -2,
+                      }}>
+                      <div style={{
+                        margin: '0 auto', width: '100%', height: 22, borderRadius: 6,
+                        background: st ? roomFill(st) : 'var(--surface-2)',
+                        color: st === 'occupied' ? '#fff' : 'var(--text)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: 9.5, opacity: st ? 1 : .4,
+                      }}>
+                        {st ? (STATUS_META[st]?.th[0] || '') : '?'}
+                      </div>
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        {loading && <div className="tu-muted" style={{ padding: 14, fontSize: 12.5 }}>กำลังโหลดประวัติ...</div>}
+      </Card>
+      <div className="tu-muted" style={{ fontSize: 11.5, marginTop: -4 }}>
+        วันที่ "?" สีจาง คือไม่มีข้อมูลประวัติย้อนหลัง (เริ่มเก็บประวัติตั้งแต่วันที่เปิดใช้ฟีเจอร์นี้) • คลิกที่ช่อง "วันนี้" เพื่อเปิดรายละเอียดห้อง
+      </div>
+
+      <RoomDetailModal room={selected} onClose={() => setSelected(null)} goto={goto} />
+    </div>
+  );
+}
+
 function RoomLegend() {
   return (
     <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -2611,6 +2765,7 @@ function RoomDetailModal({ room, onClose, goto }) {
       if (window.sb) {
         const { error } = await window.sb.from('rooms').update({ status: 'vacant' }).eq('id', room.id);
         if (error) throw error;
+        await logRoomStatus(room.id, 'vacant');
         if (window.TU?.refreshData) await window.TU.refreshData();
       } else {
         room.status = 'vacant'; force();
@@ -2630,6 +2785,7 @@ function RoomDetailModal({ room, onClose, goto }) {
       if (window.sb) {
         const { error } = await window.sb.from('rooms').update({ status: 'maintenance' }).eq('id', room.id);
         if (error) throw error;
+        await logRoomStatus(room.id, 'maintenance');
         if (window.TU?.refreshData) await window.TU.refreshData();
       } else {
         room.status = 'maintenance'; force();
@@ -2845,6 +3001,7 @@ function CheckoutModal({ room, onClose }) {
       window.sb.from('rooms').update({ status: 'cleaning' }).eq('id', room.id),
       window.sb.from('tenants').update({ check_out: today, checked_out_at: new Date().toISOString() }).eq('room_id', room.id).is('check_out', null),
     ]);
+    await logRoomStatus(room.id, 'cleaning', tenant?.id);
     if (refund !== 0) {
       await recordCashTransaction({
         tenantId: tenant?.id, roomId: room.id,
@@ -3034,6 +3191,7 @@ function MoveRoomModal({ room, onClose }) {
           window.sb.from('rooms').update({ status: 'occupied' }).eq('id', target),
           window.sb.from('invoices').update({ room_id: target }).eq('tenant_id', tenant.id).neq('status', 'paid'),
         ]);
+        await Promise.all([logRoomStatus(room.id, 'vacant'), logRoomStatus(target, 'occupied', tenant.id)]);
         if (window.TU?.refreshData) await window.TU.refreshData();
       } else {
         tenant.room = target;
@@ -3516,6 +3674,7 @@ function TenantRegister({ onDone }) {
       }
       if (error) throw error;
       await window.sb.from('rooms').update({ status: isTemp ? 'occupied' : roomStatus, rent: Number(form.rent) }).eq('id', form.room);
+      await logRoomStatus(form.room, isTemp ? 'occupied' : roomStatus, newId);
       if (window.TU?.refreshData) await window.TU.refreshData();
       if (bookingUntil) setForm(f => ({ ...f, bookingUntil }));
       setSubmitted(true);
@@ -4024,6 +4183,7 @@ function ApproveModal({ profile, onClose, onDone }) {
         window.sb.from('rooms').update({ status: 'occupied', rent: Number(form.rent) }).eq('id', form.room),
         window.sb.from('profiles').update({ room_id: form.room }).eq('id', profile.id),
       ]);
+      await logRoomStatus(form.room, 'occupied', newId);
       if (window.TU?.refreshData) await window.TU.refreshData();
       if (profile.email) {
         await emailjs.send(EJ_SERVICE, EJ_APPROVE, {
@@ -4364,6 +4524,18 @@ async function recordCashTransaction({ tenantId, roomId, category, description, 
     });
   } catch (e) {
     console.error('recordCashTransaction failed', e);
+  }
+}
+
+async function logRoomStatus(roomId, status, tenantId) {
+  if (!window.sb || !roomId) return;
+  try {
+    await window.sb.from('room_status_log').insert({
+      room_id: roomId, status, tenant_id: tenantId || null,
+      effective_date: new Date().toISOString().slice(0, 10),
+    });
+  } catch (e) {
+    console.error('logRoomStatus failed', e);
   }
 }
 
@@ -7403,7 +7575,7 @@ function App() {
     if (dbTenants) {
       const mapped = dbTenants.map(t => ({
         id: t.id, name: t.name, phone: t.phone || '',
-        room: t.room_id, type: t.type, checkIn: t.check_in,
+        room: t.room_id, type: t.type, checkIn: t.check_in, checkOut: t.check_out,
         status: t.status, deposit: Number(t.deposit) || 0,
         idCard: t.id_card || '', email: '',
       }));
@@ -7525,6 +7697,7 @@ function App() {
             <PageFade flipKey={route}>
               {route === 'dashboard' && <AdminDashboard goto={goto} />}
               {route === 'rooms' && <AdminRooms goto={goto} />}
+              {route === 'roomCalendar' && <AdminRoomCalendar goto={goto} />}
               {route === 'bookings' && <AdminBookings />}
               {route === 'tenants' && <AdminTenants />}
               {route === 'assets' && <AdminAssets />}
@@ -7817,6 +7990,7 @@ function CheckinModal({ tenant, onClose, onDone }) {
           key_deposit: collectKeyDeposit ? keyDepositAmt : 0,
         }).eq('id', tenant.id);
         await window.sb.from('rooms').update({ status: 'occupied' }).eq('id', roomKey);
+        await logRoomStatus(roomKey, 'occupied', tenant.id);
         if (invoiceItems.length > 0) {
           await createInvoiceInSB({ tenantId: tenant.id, roomId: roomKey, tenantName: tenant.name, type: tenant.type, period, issueDate: today, dueDate: dueD.toISOString().slice(0, 10), items: invoiceItems });
         }
@@ -8002,10 +8176,11 @@ function DailyCheckoutModal({ tenant, onClose, onDone }) {
           : keyDeposit > 0 ? ` | คืนมัดจำกุญแจ ฿${keyDeposit.toLocaleString()}` : '';
         const refundNote = (refund > 0 ? ` | คืนเงิน ฿${refund.toLocaleString()} เมื่อเช็คเอ้าท์` : owes === 0 ? ' | ชำระครบถ้วนเมื่อเช็คเอ้าท์' : '') + keyNote;
         // Don't set status='checked_out' — room_status enum doesn't have that value
-        // Setting check_out date is enough to remove from active lists
+        // checked_out_at is what removes the tenant from the active list
         const { error: upErr } = await window.sb.from('tenants').update({ check_out: checkoutDate, checked_out_at: new Date().toISOString(), notes: (tenant.notes || '') + refundNote, key_deposit: 0 }).eq('id', tenant.id);
         if (upErr) throw upErr;
         await window.sb.from('rooms').update({ status: 'cleaning' }).eq('id', roomKey);
+        await logRoomStatus(roomKey, 'cleaning', tenant.id);
         if (!keyLost && keyDeposit > 0) {
           await recordCashTransaction({
             tenantId: tenant.id, roomId: roomKey, category: 'key_deposit_refund',
@@ -8240,6 +8415,7 @@ function CreateBookingModal({ onClose, onDone }) {
         if (error?.message?.includes('notes')) ({ error } = await window.sb.from('tenants').insert({ ...insertData, notes: undefined }));
         if (error) throw error;
         await window.sb.from('rooms').update({ status: 'booked' }).eq('id', form.room);
+        await logRoomStatus(form.room, 'booked', newId);
         if (form.depositPaid && Number(form.deposit) > 0) {
           await recordCashTransaction({
             tenantId: newId, roomId: form.room, category: 'booking_deposit',
@@ -8368,6 +8544,7 @@ function Sidebar({ route, onNav }) {
   const items = [
   { v: 'dashboard', icon: I.dashboard, label: 'Dashboard', th: 'ภาพรวม' },
   { v: 'rooms', icon: I.rooms, label: 'Rooms', th: 'ผังห้อง' },
+  { v: 'roomCalendar', icon: I.booking, label: 'Calendar', th: 'ปฏิทินห้อง' },
   { v: 'bookings', icon: I.booking, label: 'Bookings', th: 'การจอง' },
   { v: 'tenants', icon: I.tenants, label: 'Tenants', th: 'ผู้เข้าพัก' },
   { v: 'assets', icon: I.assets, label: 'Assets', th: 'ทรัพย์สิน' },

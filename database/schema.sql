@@ -76,6 +76,17 @@ create table tenants (
   created_at  timestamptz not null default now()
 );
 
+-- ── Room status history (for the per-day room calendar) ───────────────────
+create table room_status_log (
+  id             bigserial primary key,
+  room_id        text not null references rooms(id),
+  status         room_status not null,
+  tenant_id      text references tenants(id),
+  effective_date date not null default current_date,
+  created_at     timestamptz not null default now()
+);
+create index room_status_log_room_date_idx on room_status_log (room_id, effective_date);
+
 -- ── Invoices & line items ───────────────────────────────────────────────────
 create table invoices (
   id              text primary key,        -- e.g. 'INV-2026-05-001'
@@ -341,6 +352,7 @@ $$ language sql security definer stable;
 alter table profiles        enable row level security;
 alter table rooms           enable row level security;
 alter table tenants         enable row level security;
+alter table room_status_log enable row level security;
 alter table invoices        enable row level security;
 alter table invoice_items   enable row level security;
 alter table cash_transactions enable row level security;
@@ -376,6 +388,9 @@ create policy "rooms_admin_write" on rooms for all using (is_admin()) with check
 -- tenants: admins manage all; a tenant can read only their own record
 create policy "tenants_self_or_admin_read" on tenants for select using (is_admin() or id = my_tenant_id());
 create policy "tenants_admin_write" on tenants for all using (is_admin()) with check (is_admin());
+
+-- room_status_log: admins only (used for the room calendar's history view)
+create policy "room_status_log_admin_all" on room_status_log for all using (is_admin()) with check (is_admin());
 
 -- invoices / items: admins manage all; tenant reads only their own invoices
 create policy "invoices_self_or_admin_read" on invoices for select using (is_admin() or tenant_id = my_tenant_id());
