@@ -2597,6 +2597,7 @@ function RoomDetailModal({ room, onClose, goto }) {
   const [checkout, setCheckout] = React.useState(false);
   const [deleting, setDeleting] = React.useState(false);
   const [marking, setMarking] = React.useState(false);
+  const [settingMaintenance, setSettingMaintenance] = React.useState(false);
   if (!room) return null;
   const tenant = TENANTS.find(t => t.room === room.id);
   const invoice = INVOICES.find(i => i.room === room.id && i.status !== 'paid');
@@ -2617,6 +2618,25 @@ function RoomDetailModal({ room, onClose, goto }) {
       alert('อัปเดตสถานะไม่สำเร็จ: ' + (e.message || e));
     } finally {
       setMarking(false);
+    }
+  };
+
+  const markMaintenance = async () => {
+    if (!window.confirm(`ยืนยันปิดห้อง ${room.id} เพื่อซ่อม? ห้องจะไม่แสดงเป็นห้องว่างจนกว่าจะซ่อมเสร็จ`)) return;
+    setSettingMaintenance(true);
+    try {
+      if (window.sb) {
+        const { error } = await window.sb.from('rooms').update({ status: 'maintenance' }).eq('id', room.id);
+        if (error) throw error;
+        if (window.TU?.refreshData) await window.TU.refreshData();
+      } else {
+        room.status = 'maintenance'; force();
+      }
+      onClose();
+    } catch (e) {
+      alert('อัปเดตสถานะไม่สำเร็จ: ' + (e.message || e));
+    } finally {
+      setSettingMaintenance(false);
     }
   };
 
@@ -2660,7 +2680,7 @@ function RoomDetailModal({ room, onClose, goto }) {
         {room.status === 'vacant' && <Button variant="danger" onClick={handleDelete} disabled={deleting}>{deleting ? 'กำลังลบ...' : 'ลบห้องนี้'}</Button>}
         <div style={{ flex: 1 }} />
         <Button variant="secondary" onClick={onClose}>ปิด</Button>
-        {room.status === 'cleaning' && <Button onClick={markVacant} disabled={marking}>{marking ? 'กำลังบันทึก...' : 'ทำความสะอาดเสร็จแล้ว → ห้องว่าง'}</Button>}
+        {(room.status === 'cleaning' || room.status === 'maintenance') && <Button onClick={markVacant} disabled={marking}>{marking ? 'กำลังบันทึก...' : room.status === 'cleaning' ? 'ทำความสะอาดเสร็จแล้ว → ห้องว่าง' : 'ซ่อมเสร็จแล้ว → ห้องว่าง'}</Button>}
         {room.status === 'vacant' && <Button onClick={() => { onClose(); goto('tenants'); }}>จองห้องนี้</Button>}
         {room.status === 'occupied' && <Button onClick={() => { onClose(); goto('billing'); }}>ดูใบแจ้งหนี้</Button>}
       </>}>
@@ -2753,7 +2773,7 @@ function RoomDetailModal({ room, onClose, goto }) {
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
           <ActionTile label="ย้ายห้อง" disabled={room.status !== 'occupied'} />
           <ActionTile label="แจ้งออก / คืนมัดจำ" disabled={room.status !== 'occupied'} onClick={() => setCheckout(true)} />
-          <ActionTile label="ปิดซ่อม" disabled={room.status === 'occupied'} />
+          <ActionTile label="ปิดซ่อม" disabled={room.status === 'occupied' || room.status === 'maintenance' || settingMaintenance} onClick={markMaintenance} />
         </div>
       </div>
 
