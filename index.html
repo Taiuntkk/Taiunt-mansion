@@ -2596,6 +2596,7 @@ function RoomDetailModal({ room, onClose, goto }) {
   const [, force] = React.useReducer(x => x + 1, 0);
   const [checkout, setCheckout] = React.useState(false);
   const [moving, setMoving] = React.useState(false);
+  const [checkingIn, setCheckingIn] = React.useState(false);
   const [deleting, setDeleting] = React.useState(false);
   const [marking, setMarking] = React.useState(false);
   const [settingMaintenance, setSettingMaintenance] = React.useState(false);
@@ -2683,6 +2684,7 @@ function RoomDetailModal({ room, onClose, goto }) {
         <Button variant="secondary" onClick={onClose}>ปิด</Button>
         {(room.status === 'cleaning' || room.status === 'maintenance') && <Button onClick={markVacant} disabled={marking}>{marking ? 'กำลังบันทึก...' : room.status === 'cleaning' ? 'ทำความสะอาดเสร็จแล้ว → ห้องว่าง' : 'ซ่อมเสร็จแล้ว → ห้องว่าง'}</Button>}
         {room.status === 'vacant' && <Button onClick={() => { onClose(); goto('tenants'); }}>จองห้องนี้</Button>}
+        {room.status === 'booked' && tenant && <Button onClick={() => setCheckingIn(true)}>เช็คอิน</Button>}
         {room.status === 'occupied' && <Button onClick={() => { onClose(); goto('billing'); }}>ดูใบแจ้งหนี้</Button>}
       </>}>
       <div style={{ display: 'flex', gap: 16, alignItems: 'flex-start', marginBottom: 20 }}>
@@ -2749,9 +2751,18 @@ function RoomDetailModal({ room, onClose, goto }) {
             <Avatar name={tenant.name} />
             <div style={{ flex: 1 }}>
               <div style={{ fontSize: 14, fontWeight: 500 }}>{tenant.name}</div>
-              <div className="tu-muted" style={{ fontSize: 12 }}>{tenant.phone} • เข้าพักตั้งแต่ {formatDate(tenant.checkIn)}</div>
+              <div className="tu-muted" style={{ fontSize: 12 }}>{tenant.phone} • {room.status === 'booked' ? 'จองไว้ เข้าพัก' : 'เข้าพักตั้งแต่'} {formatDate(tenant.checkIn)}</div>
             </div>
-            <Badge tone="green">รหัส {tenant.id}</Badge>
+            <Badge tone={room.status === 'booked' ? 'amber' : 'green'}>รหัส {tenant.id}</Badge>
+          </div>
+        </div>
+      )}
+
+      {room.status === 'booked' && !tenant && (
+        <div>
+          <SectionTitle>ผู้เข้าพัก</SectionTitle>
+          <div className="tu-muted" style={{ fontSize: 13, padding: '12px 14px', background: 'var(--surface-2)', borderRadius: 12 }}>
+            ไม่พบข้อมูลผู้จองสำหรับห้องนี้ — ตรวจสอบที่หน้า "การจอง" หรือเปลี่ยนสถานะห้องเป็นว่างแล้วสร้างการจองใหม่
           </div>
         </div>
       )}
@@ -2780,6 +2791,10 @@ function RoomDetailModal({ room, onClose, goto }) {
 
       <CheckoutModal room={checkout ? room : null} onClose={() => setCheckout(false)} />
       <MoveRoomModal room={moving ? room : null} onClose={() => setMoving(false)} />
+      {checkingIn && tenant && (
+        <CheckinModal tenant={tenant} onClose={() => setCheckingIn(false)}
+          onDone={() => { setCheckingIn(false); onClose(); }} />
+      )}
     </Modal>
   );
 }
@@ -2828,7 +2843,7 @@ function CheckoutModal({ room, onClose }) {
     const today = new Date().toISOString().slice(0, 10);
     await Promise.all([
       window.sb.from('rooms').update({ status: 'cleaning' }).eq('id', room.id),
-      window.sb.from('tenants').update({ check_out: today }).eq('room_id', room.id).is('check_out', null),
+      window.sb.from('tenants').update({ check_out: today, checked_out_at: new Date().toISOString() }).eq('room_id', room.id).is('check_out', null),
     ]);
     if (refund !== 0) {
       await recordCashTransaction({
@@ -7376,7 +7391,7 @@ function App() {
     if (!window.sb) return;
     const [{ data: dbRooms }, { data: dbTenants }] = await Promise.all([
       window.sb.from('rooms').select('*').order('id'),
-      window.sb.from('tenants').select('*').is('check_out', null).order('id'),
+      window.sb.from('tenants').select('*').is('checked_out_at', null).order('id'),
     ]);
     if (dbRooms) {
       const mapped = dbRooms.map(r => ({

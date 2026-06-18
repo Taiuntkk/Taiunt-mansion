@@ -67,7 +67,10 @@ create table tenants (
   phone       text,
   id_card     text,
   check_in    date,
-  check_out   date,
+  check_out   date,                            -- planned (pre check-in) or actual checkout date
+  checked_out_at timestamptz,                  -- set only once the tenant has truly moved out
+  key_deposit numeric(10,2) not null default 0,
+  notes       text,
   deposit     numeric(10,2) not null default 0,
   status      room_status not null default 'occupied',
   created_at  timestamptz not null default now()
