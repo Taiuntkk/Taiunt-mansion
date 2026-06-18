@@ -2595,6 +2595,7 @@ function RoomTile({ room, onClick }) {
 function RoomDetailModal({ room, onClose, goto }) {
   const [, force] = React.useReducer(x => x + 1, 0);
   const [checkout, setCheckout] = React.useState(false);
+  const [moving, setMoving] = React.useState(false);
   const [deleting, setDeleting] = React.useState(false);
   const [marking, setMarking] = React.useState(false);
   const [settingMaintenance, setSettingMaintenance] = React.useState(false);
@@ -2771,13 +2772,14 @@ function RoomDetailModal({ room, onClose, goto }) {
       <div style={{ marginTop: 16 }}>
         <SectionTitle>การกระทำ</SectionTitle>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
-          <ActionTile label="ย้ายห้อง" disabled={room.status !== 'occupied'} />
+          <ActionTile label="ย้ายห้อง" disabled={room.status !== 'occupied'} onClick={() => setMoving(true)} />
           <ActionTile label="แจ้งออก / คืนมัดจำ" disabled={room.status !== 'occupied'} onClick={() => setCheckout(true)} />
           <ActionTile label="ปิดซ่อม" disabled={room.status === 'occupied' || room.status === 'maintenance' || settingMaintenance} onClick={markMaintenance} />
         </div>
       </div>
 
       <CheckoutModal room={checkout ? room : null} onClose={() => setCheckout(false)} />
+      <MoveRoomModal room={moving ? room : null} onClose={() => setMoving(false)} />
     </Modal>
   );
 }
@@ -2942,6 +2944,90 @@ function RefundLine({ label, value }) {
       <span style={{ color: value < 0 ? 'var(--muted)' : 'var(--text)' }}>{label}</span>
       <span style={{ fontVariantNumeric: 'tabular-nums', color: value < 0 ? '#b35a1f' : 'var(--text)' }}>{value < 0 ? '−' : ''}฿{Math.abs(value).toLocaleString()}</span>
     </div>
+  );
+}
+
+// ─── Move tenant to another room (ย้ายห้อง) ───────────────────────────────
+function MoveRoomModal({ room, onClose }) {
+  const [target, setTarget] = React.useState('');
+  const [saving, setSaving] = React.useState(false);
+  const [err, setErr] = React.useState('');
+  React.useEffect(() => { if (room) { setTarget(''); setSaving(false); setErr(''); } }, [room && room.id]);
+  if (!room) return null;
+
+  const tenant = TENANTS.find(t => t.room === room.id);
+  const availRooms = ROOMS.filter(r => r.status === 'vacant' && r.id !== room.id);
+  const sameTypeRooms = availRooms.filter(r => r.type === room.type);
+  const otherRooms = availRooms.filter(r => r.type !== room.type);
+
+  const roomChip = (r) => (
+    <button key={r.id} onClick={() => setTarget(r.id)} style={{
+      padding: '6px 14px', borderRadius: 8, fontFamily: 'inherit', cursor: 'pointer', fontSize: 13,
+      border: `2px solid ${target === r.id ? 'var(--primary)' : 'var(--border)'}`,
+      background: target === r.id ? 'var(--primary-soft)' : 'var(--surface)',
+      color: target === r.id ? 'var(--primary)' : 'var(--text)',
+    }}>{r.id} • {r.type === 'monthly' ? 'รายเดือน' : 'รายวัน'} • ฿{r.rent.toLocaleString()}</button>
+  );
+
+  const doMove = async () => {
+    if (!target || !tenant) return;
+    setSaving(true); setErr('');
+    try {
+      if (window.sb) {
+        const { error: e1 } = await window.sb.from('tenants').update({ room_id: target }).eq('id', tenant.id);
+        if (e1) throw e1;
+        await Promise.all([
+          window.sb.from('rooms').update({ status: 'vacant' }).eq('id', room.id),
+          window.sb.from('rooms').update({ status: 'occupied' }).eq('id', target),
+          window.sb.from('invoices').update({ room_id: target }).eq('tenant_id', tenant.id).neq('status', 'paid'),
+        ]);
+        if (window.TU?.refreshData) await window.TU.refreshData();
+      } else {
+        tenant.room = target;
+        room.status = 'vacant';
+        const t = ROOMS.find(r => r.id === target); if (t) t.status = 'occupied';
+      }
+      onClose();
+    } catch (e) {
+      setErr(e.message || 'ย้ายห้องไม่สำเร็จ'); setSaving(false);
+    }
+  };
+
+  return (
+    <Modal open={!!room} onClose={onClose} title={`ย้ายห้อง — ห้อง ${room.id}`} width={520}
+      footer={<>
+        <Button variant="secondary" onClick={onClose} disabled={saving}>ยกเลิก</Button>
+        <Button onClick={doMove} disabled={saving || !target}>{saving ? 'กำลังย้าย...' : 'ยืนยันย้ายห้อง'}</Button>
+      </>}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18 }}>
+        <Avatar name={tenant ? tenant.name : 'ผู้เช่า'} />
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 14, fontWeight: 500 }}>{tenant ? tenant.name : '—'}</div>
+          <div className="tu-muted" style={{ fontSize: 12 }}>ย้ายออกจากห้อง {room.id} ไปยังห้องที่เลือกด้านล่าง</div>
+        </div>
+      </div>
+
+      <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 6 }}>
+        เลือกห้องปลายทาง {availRooms.length === 0 && <span style={{ color: '#dc2626' }}>(ไม่มีห้องว่าง)</span>}
+      </div>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+        {sameTypeRooms.map(roomChip)}
+        {sameTypeRooms.length === 0 && otherRooms.length === 0 && (
+          <span style={{ fontSize: 13, color: 'var(--muted)' }}>ไม่มีห้องว่าง</span>
+        )}
+      </div>
+      {otherRooms.length > 0 && (
+        <div style={{ marginTop: 12 }}>
+          <div className="tu-muted" style={{ fontSize: 11.5, marginBottom: 6 }}>ห้องประเภทอื่น (ค่าเช่าอาจต่างจากเดิม)</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>{otherRooms.map(roomChip)}</div>
+        </div>
+      )}
+      {err && <div style={{ marginTop: 12, fontSize: 12.5, color: '#dc2626' }}>{err}</div>}
+      <div style={{ marginTop: 14, padding: 12, background: 'rgba(216,165,52,.08)', borderRadius: 10, fontSize: 12.5, color: '#9a6b00', display: 'flex', gap: 8, alignItems: 'flex-start' }}>
+        <span style={{ marginTop: 1 }}>ℹ️</span>
+        <span>ห้องเดิม ({room.id}) จะเปลี่ยนเป็น <strong>ห้องว่าง</strong> และห้องปลายทางจะเปลี่ยนเป็น <strong>เข้าพัก</strong> ทันที</span>
+      </div>
+    </Modal>
   );
 }
 
