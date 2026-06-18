@@ -5990,10 +5990,12 @@ function AdminCashReport() {
   const [mode, setMode] = React.useState('daily');
   const [date, setDate] = React.useState(todayStr);
   const [month, setMonth] = React.useState(thisMonthStr);
+  const [rangeFrom, setRangeFrom] = React.useState(todayStr);
+  const [rangeTo, setRangeTo] = React.useState(todayStr);
   const [rows, setRows] = React.useState(null);
 
-  const rangeStart = mode === 'daily' ? date : `${month}-01`;
-  const rangeEnd = mode === 'daily' ? date : monthEndStr(month);
+  const rangeStart = mode === 'daily' ? date : mode === 'range' ? rangeFrom : `${month}-01`;
+  const rangeEnd = mode === 'daily' ? date : mode === 'range' ? rangeTo : monthEndStr(month);
 
   React.useEffect(() => {
     let active = true;
@@ -6039,7 +6041,7 @@ function AdminCashReport() {
     const csv = '﻿' + rowsOut.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
-    a.download = `รายงานการรับเงิน-${mode === 'daily' ? date : month}.csv`;
+    a.download = `รายงานการรับเงิน-${mode === 'daily' ? date : mode === 'range' ? `${rangeFrom}_${rangeTo}` : month}.csv`;
     a.click();
   };
 
@@ -6052,15 +6054,28 @@ function AdminCashReport() {
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <Tabs value={mode} onChange={setMode} options={[
           { value: 'daily', label: 'รายวัน' },
+          { value: 'range', label: 'ช่วงวันที่' },
           { value: 'monthly', label: 'รายเดือน' },
         ]} />
-        <div style={{ width: 200 }}>
-          {mode === 'daily'
-            ? <Input type="date" value={date} onChange={setDate} />
-            : <Input type="month" value={month} onChange={setMonth} />}
-        </div>
-        <Button variant="secondary" size="sm" onClick={() => mode === 'daily' ? setDate(todayStr) : setMonth(thisMonthStr)}>
-          {mode === 'daily' ? 'วันนี้' : 'เดือนนี้'}
+        {mode === 'daily' && (
+          <div style={{ width: 200 }}><Input type="date" value={date} onChange={setDate} /></div>
+        )}
+        {mode === 'range' && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <div style={{ width: 180 }}><Input type="date" value={rangeFrom} onChange={v => { setRangeFrom(v); if (v > rangeTo) setRangeTo(v); }} /></div>
+            <span className="tu-muted" style={{ fontSize: 13 }}>ถึง</span>
+            <div style={{ width: 180 }}><Input type="date" value={rangeTo} min={rangeFrom} onChange={setRangeTo} /></div>
+          </div>
+        )}
+        {mode === 'monthly' && (
+          <div style={{ width: 200 }}><Input type="month" value={month} onChange={setMonth} /></div>
+        )}
+        <Button variant="secondary" size="sm" onClick={() => {
+          if (mode === 'daily') setDate(todayStr);
+          else if (mode === 'range') { setRangeFrom(todayStr); setRangeTo(todayStr); }
+          else setMonth(thisMonthStr);
+        }}>
+          {mode === 'daily' ? 'วันนี้' : mode === 'range' ? 'วันนี้' : 'เดือนนี้'}
         </Button>
       </div>
 
@@ -6069,7 +6084,7 @@ function AdminCashReport() {
       ) : (
       <>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
-          <Stat label="รับเงินรวม" value={`฿${received.toLocaleString()}`} sub={mode === 'daily' ? formatDate(date) : `${month}`} tone="primary" icon={I.check} />
+          <Stat label="รับเงินรวม" value={`฿${received.toLocaleString()}`} sub={mode === 'daily' ? formatDate(date) : mode === 'range' ? `${formatDate(rangeFrom)} – ${formatDate(rangeTo)}` : `${month}`} tone="primary" icon={I.check} />
           <Stat label="ถอน/คืนเงินรวม" value={`฿${paidOut.toLocaleString()}`} sub="จ่ายออก / คืนมัดจำ" icon={I.billing} />
           <Stat label="คงเหลือสุทธิ" value={`฿${net.toLocaleString()}`} icon={I.finance} />
           <Stat label="จำนวนรายการ" value={count} sub="รายการในช่วงนี้" icon={I.bell} />
@@ -6081,7 +6096,7 @@ function AdminCashReport() {
           </Card>
         ) : (
         <>
-        <div style={{ display: 'grid', gridTemplateColumns: mode === 'monthly' ? '1fr 1fr 1fr' : '1fr 1fr', gap: 16, marginTop: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: mode !== 'daily' ? '1fr 1fr 1fr' : '1fr 1fr', gap: 16, marginTop: 16 }}>
           <Card>
             <SectionTitle>แยกตามช่องทางการชำระ (รับเข้า)</SectionTitle>
             {Object.entries(byMethod).map(([k, v]) => (
@@ -6094,7 +6109,7 @@ function AdminCashReport() {
               <PnLBar key={k} label={k} value={Math.abs(v)} max={categoryMax} color={v < 0 ? '#dc2626' : 'var(--primary)'} />
             ))}
           </Card>
-          {mode === 'monthly' && (
+          {mode !== 'daily' && (
             <Card>
               <SectionTitle>แยกตามวัน (สุทธิ)</SectionTitle>
               {byDayEntries.map(([d, v]) => (
