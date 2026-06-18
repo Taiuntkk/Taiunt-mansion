@@ -2773,7 +2773,7 @@ function RoomDetailModal({ room, onClose, goto }) {
         <SectionTitle>การกระทำ</SectionTitle>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
           <ActionTile label="ย้ายห้อง" disabled={room.status !== 'occupied'} onClick={() => setMoving(true)} />
-          <ActionTile label="แจ้งออก / คืนมัดจำ" disabled={room.status !== 'occupied'} onClick={() => setCheckout(true)} />
+          <ActionTile label="แจ้งออก / คืนมัดจำ" disabled={room.status !== 'occupied' && room.status !== 'notice'} onClick={() => setCheckout(true)} />
           <ActionTile label="ปิดซ่อม" disabled={room.status === 'occupied' || room.status === 'maintenance' || settingMaintenance} onClick={markMaintenance} />
         </div>
       </div>
@@ -2827,7 +2827,7 @@ function CheckoutModal({ room, onClose }) {
     setSaving(true);
     const today = new Date().toISOString().slice(0, 10);
     await Promise.all([
-      window.sb.from('rooms').update({ status: 'vacant' }).eq('id', room.id),
+      window.sb.from('rooms').update({ status: 'cleaning' }).eq('id', room.id),
       window.sb.from('tenants').update({ check_out: today }).eq('room_id', room.id).is('check_out', null),
     ]);
     if (refund !== 0) {
