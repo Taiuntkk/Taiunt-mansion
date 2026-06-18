@@ -2803,10 +2803,24 @@ function CheckoutModal({ room, onClose }) {
   const isDaily = room && room.type === 'daily';
   const deposit = isDaily ? 200 : 5000;
   const cleaningFee = isDaily ? 0 : 500;
+  const UTILITY_RATE = window.TUMP_DATA.UTILITY_RATE;
   const [damages, setDamages] = React.useState([]);
+  const [waterUnits, setWaterUnits] = React.useState('');
+  const [electricUnits, setElectricUnits] = React.useState('');
   const [done, setDone] = React.useState(false);
   const [saving, setSaving] = React.useState(false);
-  React.useEffect(() => { if (room) { setDamages([]); setDone(false); setSaving(false); } }, [room && room.id]);
+  React.useEffect(() => { if (room) { setDamages([]); setWaterUnits(''); setElectricUnits(''); setDone(false); setSaving(false); } }, [room && room.id]);
+
+  if (!room) return null;
+
+  const tenant = window.TUMP_DATA.TENANTS.find(t => t.room === room.id);
+  const waterN = Number(waterUnits) || 0;
+  const electricN = Number(electricUnits) || 0;
+  const utilityCost = !isDaily ? waterN * UTILITY_RATE.water + electricN * UTILITY_RATE.electric : 0;
+  const utilityLabel = `ค่าน้ำ-ไฟที่ใช้ถึงวันที่ออก (น้ำ ${waterN} หน่วย • ไฟ ${electricN} หน่วย)`;
+  const damageTotal = damages.reduce((s, d) => s + (Number(d.amount) || 0), 0);
+  const deductions = cleaningFee + utilityCost + damageTotal;
+  const refund = deposit - deductions;
 
   const handleCheckout = async () => {
     if (!window.sb) { setDone(true); return; }
@@ -2816,22 +2830,26 @@ function CheckoutModal({ room, onClose }) {
       window.sb.from('rooms').update({ status: 'vacant' }).eq('id', room.id),
       window.sb.from('tenants').update({ check_out: today }).eq('room_id', room.id).is('check_out', null),
     ]);
+    if (refund !== 0) {
+      await recordCashTransaction({
+        tenantId: tenant?.id, roomId: room.id,
+        category: refund >= 0 ? 'refund' : 'rent_settlement',
+        description: refund >= 0
+          ? `คืนเงินมัดจำ — ${tenant ? tenant.name : ''} ห้อง ${room.id}`
+          : `เก็บส่วนต่างตอนเช็คเอ้าท์ — ${tenant ? tenant.name : ''} ห้อง ${room.id}`,
+        amount: -refund,
+      });
+    }
     if (window.TU?.refreshData) await window.TU.refreshData();
     setSaving(false);
     setDone(true);
   };
-  if (!room) return null;
-
-  const tenant = window.TUMP_DATA.TENANTS.find(t => t.room === room.id);
-  const damageTotal = damages.reduce((s, d) => s + (Number(d.amount) || 0), 0);
-  const deductions = cleaningFee + damageTotal;
-  const refund = deposit - deductions;
   const addDamage = () => setDamages(p => [...p, { label: '', amount: '' }]);
   const setDamage = (i, k, v) => setDamages(p => p.map((d, idx) => idx === i ? { ...d, [k]: v } : d));
   const rmDamage = (i) => setDamages(p => p.filter((_, idx) => idx !== i));
 
   if (done) {
-    const openReceipt = () => openRefundReceiptWindow({ room, tenant, isDaily, deposit, cleaningFee, damages, refund });
+    const openReceipt = () => openRefundReceiptWindow({ room, tenant, isDaily, deposit, cleaningFee, utilityCost, utilityLabel, damages, refund });
     return (
       <Modal open={!!room} onClose={onClose} title="ใบคืนเงินมัดจำ / สรุปการแจ้งออก" width={520}
         footer={<>
@@ -2857,6 +2875,7 @@ function CheckoutModal({ room, onClose }) {
           </div>
           <RefundLine label={isDaily ? 'เงินมัดจำกุญแจ' : 'เงินมัดจำประกัน'} value={deposit} />
           {cleaningFee > 0 && <RefundLine label="หัก ค่าทำความสะอาดห้อง" value={-cleaningFee} />}
+          {utilityCost > 0 && <RefundLine label={`หัก ${utilityLabel}`} value={-utilityCost} />}
           {damages.filter(d => d.label || d.amount).map((d, i) => (
             <RefundLine key={i} label={`หัก ${d.label || 'ค่าเสียหาย'}`} value={-(Number(d.amount) || 0)} />
           ))}
@@ -2906,6 +2925,24 @@ function CheckoutModal({ room, onClose }) {
       <div style={{ border: '1px solid var(--border)', borderRadius: 12, overflow: 'hidden' }}>
         <SettleRow label={isDaily ? 'เงินมัดจำกุญแจ' : 'เงินมัดจำประกัน'} value={`฿${deposit.toLocaleString()}`} bold />
         {cleaningFee > 0 && <SettleRow label="หัก ค่าทำความสะอาดห้อง" value={`−฿${cleaningFee.toLocaleString()}`} negative />}
+        {!isDaily && (
+          <div style={{ padding: '10px 14px', borderTop: '1px solid var(--border)' }}>
+            <div style={{ fontSize: 13, marginBottom: 8 }}>ค่าน้ำ-ไฟที่ใช้ถึงวันที่ออก (ยังไม่เรียกเก็บ)</div>
+            <div style={{ display: 'flex', gap: 14 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1 }}>
+                <span className="tu-muted" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>หน่วยน้ำ (฿{UTILITY_RATE.water}/หน่วย)</span>
+                <input type="number" value={waterUnits} onChange={(e) => setWaterUnits(e.target.value)} placeholder="0"
+                  style={{ width: 64, height: 34, border: '1px solid var(--border)', borderRadius: 8, padding: '0 8px', fontFamily: 'inherit', fontSize: 13, background: 'var(--surface)', color: 'inherit', textAlign: 'right' }} />
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1 }}>
+                <span className="tu-muted" style={{ fontSize: 12, whiteSpace: 'nowrap' }}>หน่วยไฟ (฿{UTILITY_RATE.electric}/หน่วย)</span>
+                <input type="number" value={electricUnits} onChange={(e) => setElectricUnits(e.target.value)} placeholder="0"
+                  style={{ width: 64, height: 34, border: '1px solid var(--border)', borderRadius: 8, padding: '0 8px', fontFamily: 'inherit', fontSize: 13, background: 'var(--surface)', color: 'inherit', textAlign: 'right' }} />
+              </div>
+            </div>
+            {utilityCost > 0 && <div style={{ marginTop: 8, fontSize: 12.5, color: '#b35a1f' }}>หัก ค่าน้ำ-ไฟ: −฿{utilityCost.toLocaleString()}</div>}
+          </div>
+        )}
         {damages.map((d, i) => (
           <div key={i} style={{ display: 'flex', gap: 8, alignItems: 'center', padding: '8px 14px', borderTop: '1px solid var(--border)' }}>
             <input value={d.label} onChange={(e) => setDamage(i, 'label', e.target.value)} placeholder="รายการค่าเสียหาย เช่น กระจกแตก"
@@ -4197,7 +4234,7 @@ function openInvoiceWindow(invoice) {
   w.document.close();
 }
 
-function openRefundReceiptWindow({ room, tenant, isDaily, deposit, cleaningFee, damages, refund }) {
+function openRefundReceiptWindow({ room, tenant, isDaily, deposit, cleaningFee, utilityCost, utilityLabel, damages, refund }) {
   const today = formatDate(new Date());
   const validDamages = (damages || []).filter(d => d.label || d.amount);
   const w = window.open('', '_blank', 'width=820,height=1000,scrollbars=yes');
@@ -4237,6 +4274,7 @@ function openRefundReceiptWindow({ room, tenant, isDaily, deposit, cleaningFee, 
     </div>
     <div class="row"><span>${isDaily ? 'เงินมัดจำกุญแจ' : 'เงินมัดจำประกัน'}</span><span>฿${deposit.toLocaleString()}</span></div>
     ${cleaningFee > 0 ? `<div class="row"><span>หัก ค่าทำความสะอาดห้อง</span><span class="neg">−฿${cleaningFee.toLocaleString()}</span></div>` : ''}
+    ${utilityCost > 0 ? `<div class="row"><span>หัก ${utilityLabel}</span><span class="neg">−฿${utilityCost.toLocaleString()}</span></div>` : ''}
     ${validDamages.map(d => `<div class="row"><span>หัก ${d.label || 'ค่าเสียหาย'}</span><span class="neg">−฿${(Number(d.amount) || 0).toLocaleString()}</span></div>`).join('')}
     <div class="total">
       <span class="lbl">${refund >= 0 ? 'คืนเงินสุทธิ' : 'เรียกเก็บเพิ่ม'}</span>
