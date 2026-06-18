@@ -99,6 +99,25 @@ create table invoice_items (
   amount      numeric(10,2) not null
 );
 
+-- ── Cash transactions (real money ledger — เงินเข้า/เงินออกจริง) ────────────
+-- One row per real cash event (key deposit, booking deposit, rent payment,
+-- checkout refund/forfeiture, invoice payment, ...). amount > 0 = received,
+-- amount < 0 = paid out / refunded. recorded_by is the signed-in admin's
+-- name at the time of recording (the "signature" on the receipt).
+create table cash_transactions (
+  id              bigint generated always as identity primary key,
+  occurred_at     timestamptz not null default now(),
+  tenant_id       text references tenants(id),
+  room_id         text references rooms(id),
+  category        text not null,           -- 'key_deposit' | 'key_deposit_refund' | 'key_loss_fee' | 'booking_deposit' | 'rent_settlement' | 'refund' | 'invoice_payment' | 'other'
+  description     text not null,
+  amount          numeric(10,2) not null,
+  payment_method  text,
+  recorded_by     text,
+  recorded_by_id  uuid references auth.users(id),
+  created_at      timestamptz not null default now()
+);
+
 -- ── Repairs (tenant-reported issues) ────────────────────────────────────────
 create table repairs (
   id            text primary key,          -- e.g. 'RPR-2026-038'
@@ -321,6 +340,7 @@ alter table rooms           enable row level security;
 alter table tenants         enable row level security;
 alter table invoices        enable row level security;
 alter table invoice_items   enable row level security;
+alter table cash_transactions enable row level security;
 alter table repairs         enable row level security;
 alter table promotions      enable row level security;
 alter table announcements   enable row level security;
@@ -360,6 +380,9 @@ create policy "invoices_admin_write" on invoices for all using (is_admin()) with
 create policy "invoice_items_self_or_admin_read" on invoice_items for select
   using (is_admin() or invoice_id in (select id from invoices where tenant_id = my_tenant_id()));
 create policy "invoice_items_admin_write" on invoice_items for all using (is_admin()) with check (is_admin());
+
+-- cash_transactions: admin-only ledger (real money in/out)
+create policy "cash_transactions_admin" on cash_transactions for all using (is_admin()) with check (is_admin());
 
 -- repairs: admins manage all; tenant can read + create their own room's reports
 create policy "repairs_self_or_admin_read" on repairs for select using (is_admin() or tenant_id = my_tenant_id());

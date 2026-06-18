@@ -4088,6 +4088,54 @@ function mapInvoiceRow(row) {
   };
 }
 
+const CASH_TX_LABELS = {
+  key_deposit: 'รับมัดจำกุญแจ',
+  key_deposit_refund: 'คืนมัดจำกุญแจ',
+  key_loss_fee: 'ค่าปรับกุญแจหาย',
+  booking_deposit: 'รับมัดจำจอง',
+  rent_settlement: 'เก็บส่วนต่างตอนเช็คเอ้าท์',
+  refund: 'คืนเงินผู้เช่า',
+  invoice_payment: 'ชำระใบแจ้งหนี้',
+  other: 'อื่นๆ',
+};
+
+function mapCashTxRow(row) {
+  return {
+    id: row.id,
+    occurredAt: row.occurred_at,
+    tenantId: row.tenant_id,
+    roomId: row.room_id || '—',
+    category: row.category,
+    categoryLabel: CASH_TX_LABELS[row.category] || row.category,
+    description: row.description,
+    amount: Number(row.amount) || 0,
+    paymentMethod: row.payment_method,
+    recordedBy: row.recorded_by || '—',
+  };
+}
+
+// Records a real cash in/out event (key deposit, booking deposit, rent
+// settlement, refund, ...). amount > 0 = received, amount < 0 = paid out.
+// "recorded_by" is whoever is currently signed in — the receipt signature.
+async function recordCashTransaction({ tenantId, roomId, category, description, amount, paymentMethod }) {
+  if (!window.sb || !amount) return;
+  const user = window.TU?.currentUser;
+  try {
+    await window.sb.from('cash_transactions').insert({
+      tenant_id: tenantId || null,
+      room_id: roomId || null,
+      category,
+      description,
+      amount,
+      payment_method: paymentMethod || null,
+      recorded_by: user?.name || user?.email || null,
+      recorded_by_id: user?.id || null,
+    });
+  } catch (e) {
+    console.error('recordCashTransaction failed', e);
+  }
+}
+
 function AdminBilling() {
   const [mode, setMode] = React.useState('invoices');
   const [filter, setFilter] = React.useState('all');
@@ -4372,6 +4420,11 @@ function InvoiceModal({ invoice, onClose, onPaid }) {
     const paymentMethod = { qr: 'QR PromptPay', bank: 'โอนธนาคาร', cash: 'เงินสด' }[method];
     if (window.sb) {
       await window.sb.from('invoices').update({ status: 'paid', paid_at: now, payment_method: paymentMethod }).eq('id', invoice.id);
+      await recordCashTransaction({
+        tenantId: invoice.tenantId, roomId: invoice.room, category: 'invoice_payment',
+        description: `ชำระใบแจ้งหนี้ ${invoice.id} — ${invoice.tenantName} ห้อง ${invoice.room}`,
+        amount: invoice.total, paymentMethod,
+      });
     }
     invoice.status = 'paid';
     invoice.paidAt = now;
@@ -5923,7 +5976,7 @@ function PnLBar({ label, value, max, color }) {
 
 Object.assign(window, { AdminFinance });
 
-// Cash receipts report — รายงานการรับเงิน (รายวัน / รายเดือน) จากใบแจ้งหนี้ที่ชำระแล้วจริงใน Supabase
+// Cash receipts report — รายงานการรับเงิน (รายวัน / รายเดือน) จากสมุดบันทึกรายรับ-จ่ายจริงใน Supabase
 
 function monthEndStr(ym) {
   const [y, m] = ym.split('-').map(Number);
@@ -5947,29 +6000,42 @@ function AdminCashReport() {
     setRows(null);
     (async () => {
       if (!window.sb) { if (active) setRows([]); return; }
-      const { data } = await window.sb.from('invoices').select('*')
-        .eq('status', 'paid').gte('paid_at', rangeStart).lte('paid_at', rangeEnd)
-        .order('paid_at', { ascending: false });
-      if (active) setRows((data || []).map(mapInvoiceRow));
+      const { data } = await window.sb.from('cash_transactions').select('*')
+        .gte('occurred_at', rangeStart).lte('occurred_at', rangeEnd + 'T23:59:59')
+        .order('occurred_at', { ascending: true });
+      if (active) setRows((data || []).map(mapCashTxRow));
     })();
     return () => { active = false; };
   }, [rangeStart, rangeEnd]);
 
-  const list = rows || [];
-  const total = list.reduce((s, r) => s + r.total, 0);
-  const count = list.length;
+  // Running balance (คงเหลือสะสม) — chronological, like the physical ledger book
+  const chrono = rows || [];
+  let bal = 0;
+  const withBalance = chrono.map(r => { bal += r.amount; return { ...r, balance: bal }; });
+  const list = [...withBalance].reverse(); // newest first for display
+
+  const received = chrono.filter(r => r.amount > 0).reduce((s, r) => s + r.amount, 0);
+  const paidOut = chrono.filter(r => r.amount < 0).reduce((s, r) => s + -r.amount, 0);
+  const net = received - paidOut;
+  const count = chrono.length;
+
   const byMethod = {};
-  list.forEach(r => { const k = r.paymentMethod || 'ไม่ระบุช่องทาง'; byMethod[k] = (byMethod[k] || 0) + r.total; });
-  const methodMax = Math.max(1, ...Object.values(byMethod));
+  chrono.filter(r => r.amount > 0).forEach(r => { const k = r.paymentMethod || 'ไม่ระบุช่องทาง'; byMethod[k] = (byMethod[k] || 0) + r.amount; });
+  const methodMax = Math.max(1, ...Object.values(byMethod), 0);
+  const byCategory = {};
+  chrono.forEach(r => { byCategory[r.categoryLabel] = (byCategory[r.categoryLabel] || 0) + r.amount; });
+  const categoryMax = Math.max(1, ...Object.values(byCategory).map(Math.abs), 0);
   const byDay = {};
-  list.forEach(r => { const d = (r.paidAt || '').slice(0, 10); byDay[d] = (byDay[d] || 0) + r.total; });
+  chrono.forEach(r => { const d = (r.occurredAt || '').slice(0, 10); byDay[d] = (byDay[d] || 0) + r.amount; });
   const byDayEntries = Object.entries(byDay).sort((a, b) => a[0].localeCompare(b[0]));
-  const dayMax = Math.max(1, ...Object.values(byDay));
+  const dayMax = Math.max(1, ...Object.values(byDay).map(Math.abs), 0);
 
   const exportCSV = () => {
-    const rowsOut = [['เลขที่ใบเสร็จ', 'ผู้เช่า', 'ห้อง', 'ประเภท', 'งวด', 'วันที่ชำระ', 'ช่องทาง', 'ยอด (฿)']];
-    list.forEach(inv => rowsOut.push([inv.id, inv.tenantName, inv.room, inv.type === 'monthly' ? 'รายเดือน' : 'รายวัน', inv.period, inv.paidAt || '', inv.paymentMethod || '', inv.total]));
-    rowsOut.push(['', '', '', '', '', '', 'รวม', total]);
+    const rowsOut = [['เวลา', 'รายการ', 'ห้อง', 'รับ (฿)', 'ถอน/คืน (฿)', 'คงเหลือ (฿)', 'ช่องทาง', 'ผู้บันทึก (ลายเซ็น)']];
+    withBalance.forEach(r => rowsOut.push([
+      (r.occurredAt || '').slice(0, 16).replace('T', ' '), r.description, r.roomId,
+      r.amount > 0 ? r.amount : '', r.amount < 0 ? -r.amount : '', r.balance, r.paymentMethod || '', r.recordedBy,
+    ]));
     const csv = '﻿' + rowsOut.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
@@ -5979,7 +6045,7 @@ function AdminCashReport() {
 
   return (
     <div className="tu-page">
-      <PageHeader title="รายงานการรับเงิน" subtitle="Cash Receipts — สรุปยอดรับเงินจากใบเสร็จที่ชำระแล้วจริง รายวันและรายเดือน"
+      <PageHeader title="รายงานการรับเงิน" subtitle="Cash Receipts — สมุดบันทึกรายรับ-จ่ายจริง รายวันและรายเดือน พร้อมลายเซ็นผู้บันทึก"
         actions={<Button variant="secondary" size="sm" icon={I.download} onClick={exportCSV} disabled={count === 0}>ดาวน์โหลด CSV</Button>}
       />
 
@@ -6002,10 +6068,11 @@ function AdminCashReport() {
         <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>กำลังโหลดข้อมูล...</div>
       ) : (
       <>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 16 }}>
-          <Stat label="ยอดรับเงินรวม" value={`฿${total.toLocaleString()}`} sub={mode === 'daily' ? formatDate(date) : `${month}`} tone="primary" icon={I.check} />
-          <Stat label="จำนวนใบเสร็จ" value={count} sub="รายการที่ชำระแล้ว" icon={I.billing} />
-          <Stat label="เฉลี่ยต่อใบเสร็จ" value={`฿${count ? Math.round(total / count).toLocaleString() : 0}`} icon={I.finance} />
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
+          <Stat label="รับเงินรวม" value={`฿${received.toLocaleString()}`} sub={mode === 'daily' ? formatDate(date) : `${month}`} tone="primary" icon={I.check} />
+          <Stat label="ถอน/คืนเงินรวม" value={`฿${paidOut.toLocaleString()}`} sub="จ่ายออก / คืนมัดจำ" icon={I.billing} />
+          <Stat label="คงเหลือสุทธิ" value={`฿${net.toLocaleString()}`} icon={I.finance} />
+          <Stat label="จำนวนรายการ" value={count} sub="รายการในช่วงนี้" icon={I.bell} />
         </div>
 
         {count === 0 ? (
@@ -6014,18 +6081,24 @@ function AdminCashReport() {
           </Card>
         ) : (
         <>
-        <div style={{ display: 'grid', gridTemplateColumns: mode === 'monthly' ? '1fr 1fr' : '1fr', gap: 16, marginTop: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: mode === 'monthly' ? '1fr 1fr 1fr' : '1fr 1fr', gap: 16, marginTop: 16 }}>
           <Card>
-            <SectionTitle>แยกตามช่องทางการชำระ</SectionTitle>
+            <SectionTitle>แยกตามช่องทางการชำระ (รับเข้า)</SectionTitle>
             {Object.entries(byMethod).map(([k, v]) => (
               <PnLBar key={k} label={k} value={v} max={methodMax} color="var(--primary)" />
             ))}
           </Card>
+          <Card>
+            <SectionTitle>แยกตามรายการ</SectionTitle>
+            {Object.entries(byCategory).map(([k, v]) => (
+              <PnLBar key={k} label={k} value={Math.abs(v)} max={categoryMax} color={v < 0 ? '#dc2626' : 'var(--primary)'} />
+            ))}
+          </Card>
           {mode === 'monthly' && (
             <Card>
-              <SectionTitle>แยกตามวัน</SectionTitle>
+              <SectionTitle>แยกตามวัน (สุทธิ)</SectionTitle>
               {byDayEntries.map(([d, v]) => (
-                <PnLBar key={d} label={formatDate(d)} value={v} max={dayMax} color="var(--accent)" />
+                <PnLBar key={d} label={formatDate(d)} value={Math.abs(v)} max={dayMax} color={v < 0 ? '#dc2626' : 'var(--accent)'} />
               ))}
             </Card>
           )}
@@ -6034,18 +6107,19 @@ function AdminCashReport() {
         <Card padding={0} style={{ marginTop: 16 }}>
           <table className="tu-table">
             <thead>
-              <tr><th>เลขที่ใบเสร็จ</th><th>ผู้เช่า</th><th>ห้อง</th><th>งวด</th><th>วันที่ชำระ</th><th>ช่องทาง</th><th style={{ textAlign: 'right' }}>ยอด (฿)</th></tr>
+              <tr><th>เวลา</th><th>รายการ</th><th>ห้อง</th><th style={{ textAlign: 'right' }}>รับ</th><th style={{ textAlign: 'right' }}>ถอน/คืน</th><th style={{ textAlign: 'right' }}>คงเหลือ</th><th>ช่องทาง</th><th>ผู้บันทึก</th></tr>
             </thead>
             <tbody>
-              {list.map(inv => (
-                <tr key={inv.id} className="tu-row-hover">
-                  <td style={{ fontFamily: 'ui-monospace,monospace', fontSize: 11.5 }}>{inv.id}</td>
-                  <td style={{ fontWeight: 500 }}>{inv.tenantName}</td>
-                  <td><Badge tone="neutral">{inv.room}</Badge></td>
-                  <td className="tu-muted">{inv.period}</td>
-                  <td className="tu-muted">{formatDate(inv.paidAt)}</td>
-                  <td className="tu-muted">{inv.paymentMethod || '—'}</td>
-                  <td style={{ textAlign: 'right', fontWeight: 600, fontVariantNumeric: 'tabular-nums' }}>฿{inv.total.toLocaleString()}</td>
+              {list.map(r => (
+                <tr key={r.id} className="tu-row-hover">
+                  <td className="tu-muted" style={{ fontSize: 12 }}>{formatDate((r.occurredAt || '').slice(0, 10))} {(r.occurredAt || '').slice(11, 16)}</td>
+                  <td style={{ fontWeight: 500 }}>{r.description}</td>
+                  <td><Badge tone="neutral">{r.roomId}</Badge></td>
+                  <td style={{ textAlign: 'right', fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: '#16a34a' }}>{r.amount > 0 ? `฿${r.amount.toLocaleString()}` : '—'}</td>
+                  <td style={{ textAlign: 'right', fontWeight: 600, fontVariantNumeric: 'tabular-nums', color: '#dc2626' }}>{r.amount < 0 ? `฿${(-r.amount).toLocaleString()}` : '—'}</td>
+                  <td style={{ textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>฿{r.balance.toLocaleString()}</td>
+                  <td className="tu-muted">{r.paymentMethod || '—'}</td>
+                  <td className="tu-muted" style={{ fontSize: 12 }}>{r.recordedBy}</td>
                 </tr>
               ))}
             </tbody>
@@ -7031,6 +7105,7 @@ function App() {
   const [route, setRoute] = React.useState('dashboard');
   const [transitioning, setTransitioning] = React.useState(false);
   const [recoveryMode, setRecoveryMode] = React.useState(false);
+  const [currentUser, setCurrentUser] = React.useState(null);
 
   // When connected to Supabase: restore the session on load and keep it in
   // sync (sign-in/sign-out from anywhere in the app routes through here).
@@ -7038,9 +7113,17 @@ function App() {
     if (!window.sb) return;
     let active = true;
     const applySession = async (session) => {
-      if (!session) { if (active) { setAuth(null); setAuthLoading(false); } return; }
-      const { data: profile } = await window.sb.from('profiles').select('role').eq('id', session.user.id).single();
+      if (!session) {
+        if (active) { setAuth(null); setAuthLoading(false); setCurrentUser(null); }
+        window.TU = window.TU || {}; window.TU.currentUser = null;
+        return;
+      }
+      const { data: profile } = await window.sb.from('profiles').select('role, full_name').eq('id', session.user.id).single();
       if (!active) return;
+      const user = { id: session.user.id, email: session.user.email, name: profile?.full_name || session.user.email || 'ผู้ดูแลระบบ' };
+      window.TU = window.TU || {};
+      window.TU.currentUser = user;
+      setCurrentUser(user);
       setAuth(profile?.role === 'admin' ? 'admin' : 'customer');
       setAuthLoading(false);
     };
@@ -7191,7 +7274,7 @@ function App() {
       <div className="tu-shell">
         <Sidebar route={route} onNav={goto} />
         <div className="tu-main">
-          <TopBar />
+          <TopBar user={currentUser} />
           <div className={'tu-content' + (transitioning ? ' tu-content-out' : '')}>
             <PageFade flipKey={route}>
               {route === 'dashboard' && <AdminDashboard goto={goto} />}
@@ -7491,6 +7574,22 @@ function CheckinModal({ tenant, onClose, onDone }) {
         if (invoiceItems.length > 0) {
           await createInvoiceInSB({ tenantId: tenant.id, roomId: roomKey, tenantName: tenant.name, type: tenant.type, period, issueDate: today, dueDate: dueD.toISOString().slice(0, 10), items: invoiceItems });
         }
+        // Booking deposit collected for the first time right here at check-in
+        // (not already recorded when the booking was created).
+        if (depositPaid && deposit > 0 && !tenant.notes?.includes('ชำระมัดจำ')) {
+          await recordCashTransaction({
+            tenantId: tenant.id, roomId: roomKey, category: 'booking_deposit',
+            description: `รับมัดจำจอง — ${tenant.name} ห้อง ${roomKey}`,
+            amount: deposit, paymentMethod: pmLabel,
+          });
+        }
+        if (collectKeyDeposit && keyDepositAmt > 0) {
+          await recordCashTransaction({
+            tenantId: tenant.id, roomId: roomKey, category: 'key_deposit',
+            description: `รับมัดจำกุญแจ — ${tenant.name} ห้อง ${roomKey}`,
+            amount: keyDepositAmt, paymentMethod: pmLabel,
+          });
+        }
         if (window.TU?.refreshData) await window.TU.refreshData();
       }
       onDone();
@@ -7661,6 +7760,34 @@ function DailyCheckoutModal({ tenant, onClose, onDone }) {
         const { error: upErr } = await window.sb.from('tenants').update({ check_out: checkoutDate, checked_out_at: new Date().toISOString(), notes: (tenant.notes || '') + refundNote, key_deposit: 0 }).eq('id', tenant.id);
         if (upErr) throw upErr;
         await window.sb.from('rooms').update({ status: 'cleaning' }).eq('id', roomKey);
+        if (!keyLost && keyDeposit > 0) {
+          await recordCashTransaction({
+            tenantId: tenant.id, roomId: roomKey, category: 'key_deposit_refund',
+            description: `คืนมัดจำกุญแจ — ${tenant.name} ห้อง ${roomKey}`,
+            amount: -keyDeposit,
+          });
+        }
+        if (keyLost && keyDeposit === 0 && keyLostFee > 0) {
+          await recordCashTransaction({
+            tenantId: tenant.id, roomId: roomKey, category: 'key_loss_fee',
+            description: `ค่าปรับกุญแจหาย (ไม่มีมัดจำกุญแจไว้) — ${tenant.name} ห้อง ${roomKey}`,
+            amount: keyLostFee,
+          });
+        }
+        if (owes > 0) {
+          await recordCashTransaction({
+            tenantId: tenant.id, roomId: roomKey, category: 'rent_settlement',
+            description: `เก็บส่วนต่างตอนเช็คเอ้าท์ — ${tenant.name} ห้อง ${roomKey}`,
+            amount: owes,
+          });
+        }
+        if (refund > 0) {
+          await recordCashTransaction({
+            tenantId: tenant.id, roomId: roomKey, category: 'refund',
+            description: `คืนเงินผู้เช่าตอนเช็คเอ้าท์ — ${tenant.name} ห้อง ${roomKey}`,
+            amount: -refund,
+          });
+        }
         if (window.TU?.refreshData) await window.TU.refreshData();
       }
       setBusy(false);
@@ -7867,6 +7994,13 @@ function CreateBookingModal({ onClose, onDone }) {
         if (error?.message?.includes('notes')) ({ error } = await window.sb.from('tenants').insert({ ...insertData, notes: undefined }));
         if (error) throw error;
         await window.sb.from('rooms').update({ status: 'booked' }).eq('id', form.room);
+        if (form.depositPaid && Number(form.deposit) > 0) {
+          await recordCashTransaction({
+            tenantId: newId, roomId: form.room, category: 'booking_deposit',
+            description: `รับมัดจำจอง — ${form.name.trim()} ห้อง ${form.room}`,
+            amount: Number(form.deposit), paymentMethod: pmLabel,
+          });
+        }
         if (window.TU?.refreshData) await window.TU.refreshData();
       } else {
         const r = ROOMS.find(x => x.id === form.room);
@@ -8042,7 +8176,7 @@ function Sidebar({ route, onNav }) {
 
 }
 
-function TopBar() {
+function TopBar({ user }) {
   return (
     <div className="tu-topbar">
       <div style={{ width: 360, maxWidth: '50%' }}>
@@ -8056,10 +8190,10 @@ function TopBar() {
         </button>
         <div style={{ width: 1, height: 24, background: 'var(--border)' }} />
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          <Avatar name="ผู้ดูแล Admin" size={32} />
+          <Avatar name={user?.name || 'ผู้ดูแล Admin'} size={32} />
           <div>
-            <div style={{ fontSize: 12.5, fontWeight: 600 }}>ผู้ดูแลระบบ</div>
-            <div className="tu-muted" style={{ fontSize: 11 }}>admin@taiunt</div>
+            <div style={{ fontSize: 12.5, fontWeight: 600 }}>{user?.name || 'ผู้ดูแลระบบ'}</div>
+            <div className="tu-muted" style={{ fontSize: 11 }}>{user?.email || 'admin@taiunt'}</div>
           </div>
         </div>
       </div>
