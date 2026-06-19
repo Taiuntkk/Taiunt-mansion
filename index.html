@@ -5549,6 +5549,11 @@ function AdminAssets() {
         </div>
       )}
 
+      <div style={{ padding: '8px 16px', borderRadius: 10, background: '#eef2ee', color: '#444', fontSize: 12, marginBottom: 16 }}>
+        debug: เชื่อมฐานข้อมูลแล้ว {allItems.filter(i => i.id != null).length} / {allItems.length} รายการ
+        &nbsp;•&nbsp; refreshData ถูกเรียกแล้ว: {window.TU?.refreshDataCalled ? 'ใช่' : 'ไม่'}
+      </div>
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
         <Stat label="ทรัพย์สินทั้งหมด" value={counts.all} sub={`${ASSETS.length} ห้อง × 4 รายการ`} tone="primary" icon={kindIcon('tv')} />
         <Stat label="พร้อมใช้งาน" value={counts.all - needRepair - needCheck} sub="สภาพดี" icon={I.check} />
@@ -7969,6 +7974,8 @@ function App() {
   const [dataVersion, setDataVersion] = React.useState(0);
 
   const refreshData = React.useCallback(async () => {
+    window.TU = window.TU || {};
+    window.TU.refreshDataCalled = true;
     if (!window.sb) return;
     const [{ data: dbRooms, error: roomsErr }, { data: dbTenants, error: tenantsErr }, { data: dbAssets, error: assetsErr }] = await Promise.all([
       window.sb.from('rooms').select('*').order('id'),
