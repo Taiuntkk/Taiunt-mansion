@@ -5543,6 +5543,12 @@ function AdminAssets() {
         </>}
       />
 
+      {window.TU?.assetsLoadError && (
+        <div style={{ padding: '12px 16px', borderRadius: 10, background: '#fcd2d2', color: '#9b1c1c', fontSize: 13, marginBottom: 16 }}>
+          โหลดข้อมูลทรัพย์สินจากฐานข้อมูลไม่สำเร็จ: {window.TU.assetsLoadError}
+        </div>
+      )}
+
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
         <Stat label="ทรัพย์สินทั้งหมด" value={counts.all} sub={`${ASSETS.length} ห้อง × 4 รายการ`} tone="primary" icon={kindIcon('tv')} />
         <Stat label="พร้อมใช้งาน" value={counts.all - needRepair - needCheck} sub="สภาพดี" icon={I.check} />
@@ -7971,6 +7977,8 @@ function App() {
     if (roomsErr) console.error('[refreshData] rooms query failed:', roomsErr);
     if (tenantsErr) console.error('[refreshData] tenants query failed:', tenantsErr);
     if (assetsErr) console.error('[refreshData] asset_items query failed:', assetsErr);
+    window.TU = window.TU || {};
+    window.TU.assetsLoadError = assetsErr ? (assetsErr.message || JSON.stringify(assetsErr)) : null;
     if (dbRooms) {
       const mapped = dbRooms.map(r => ({
         id: r.id, floor: r.floor, type: r.type, status: r.status,
