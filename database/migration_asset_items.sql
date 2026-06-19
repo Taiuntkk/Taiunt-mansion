@@ -16,7 +16,8 @@ alter table asset_items add column if not exists notes text;
 alter table asset_items add column if not exists updated_at timestamptz not null default now();
 
 insert into asset_items (room_id, kind, label, brand, detail, spec, year, condition)
-select * from (values
+select room_id, kind::asset_kind, label, brand, detail, spec, year, condition::asset_condition
+from (values
 ('101', 'tv', 'ทีวี', 'Samsung', 'Smart TV', '43"', 2020, 'good'),
 ('101', 'ac', 'แอร์', 'Mitsubishi', 'Mr.Slim', '18,000 BTU', 2019, 'good'),
 ('101', 'fridge', 'ตู้เย็น', 'Toshiba', 'GR-B22', '6.4 คิว', 2020, 'fair'),
