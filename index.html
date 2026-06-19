@@ -2528,13 +2528,47 @@ function AdminRooms({ goto }) {
 // ─── Date-aware room status calendar (ปฏิทินห้อง) ─────────────────────────
 function dateKey(d) { return d.toISOString().slice(0, 10); }
 function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
+function daysBetween(aKey, bKey) {
+  const p = k => { const [y, m, d] = k.split('-').map(Number); return Date.UTC(y, m - 1, d); };
+  return Math.round((p(bKey) - p(aKey)) / 86400000);
+}
+
+// Fetch every tenant stay (current or historical) that overlaps [startKey, endKey], regardless
+// of whether they've since checked out — the live TENANTS array only holds *active* tenants.
+async function fetchStaysInRange(startKey, endKey) {
+  if (!window.sb) return [];
+  const { data } = await window.sb.from('tenants').select('*')
+    .lte('check_in', endKey)
+    .or(`check_out.is.null,check_out.gte.${startKey}`);
+  return (data || []).map(t => ({
+    id: t.id, name: t.name, phone: t.phone || '', room: t.room_id, type: t.type,
+    checkIn: t.check_in, checkOut: t.check_out, status: t.status, deposit: Number(t.deposit) || 0,
+  }));
+}
 
 function AdminRoomCalendar({ goto }) {
+  const [tab, setTab] = React.useState('grid');
+  return (
+    <div className="tu-page">
+      <PageHeader title="ปฏิทินห้อง" subtitle="Room Calendar — ดูสถานะห้องรายวัน ย้อนดูประวัติ และสรุปการใช้ห้อง"
+        actions={<Tabs value={tab} onChange={setTab} options={[
+          { value: 'grid', label: 'ปฏิทิน' },
+          { value: 'summary', label: 'สรุปการใช้ห้อง' },
+        ]} />}
+      />
+      {tab === 'grid' ? <RoomCalendarGrid goto={goto} /> : <RoomUsageSummary />}
+    </div>
+  );
+}
+
+function RoomCalendarGrid({ goto }) {
   const [filterType, setFilterType] = React.useState('daily');
   const [anchor, setAnchor] = React.useState(() => { const d = new Date(); d.setHours(0,0,0,0); return d; });
   const [logRows, setLogRows] = React.useState([]);
+  const [stays, setStays] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
-  const [selected, setSelected] = React.useState(null);
+  const [openRoom, setOpenRoom] = React.useState(null);
+  const [cell, setCell] = React.useState(null);
   const todayKey = dateKey(new Date());
 
   const DAYS_BACK = 7, DAYS_FWD = 13;
@@ -2542,64 +2576,52 @@ function AdminRoomCalendar({ goto }) {
     const start = addDays(anchor, -DAYS_BACK);
     return Array.from({ length: DAYS_BACK + DAYS_FWD + 1 }, (_, i) => addDays(start, i));
   }, [anchor]);
+  const windowStart = dateKey(days[0]), windowEnd = dateKey(days[days.length - 1]);
 
   React.useEffect(() => {
     (async () => {
       if (!window.sb) { setLoading(false); return; }
       setLoading(true);
-      const { data } = await window.sb.from('room_status_log').select('*')
-        .gte('effective_date', dateKey(addDays(anchor, -DAYS_BACK - 60)))
-        .lte('effective_date', dateKey(addDays(anchor, DAYS_FWD)))
-        .order('effective_date', { ascending: true });
-      setLogRows(data || []);
+      const [{ data: logData }, stayData] = await Promise.all([
+        window.sb.from('room_status_log').select('*')
+          .gte('effective_date', windowStart).lte('effective_date', windowEnd)
+          .order('effective_date', { ascending: true }),
+        fetchStaysInRange(windowStart, windowEnd),
+      ]);
+      setLogRows(logData || []);
+      setStays(stayData);
       setLoading(false);
     })();
-  }, [anchor]);
+  }, [windowStart, windowEnd]);
 
-  // room_id -> sorted [{effective_date, status}] (entries on/before "today" only matter for past lookups)
   const logByRoom = React.useMemo(() => {
     const m = {};
     logRows.forEach(r => { (m[r.room_id] = m[r.room_id] || []).push(r); });
     return m;
   }, [logRows]);
+  const staysByRoom = React.useMemo(() => {
+    const m = {};
+    stays.forEach(s => { (m[s.room] = m[s.room] || []).push(s); });
+    return m;
+  }, [stays]);
 
-  const statusOnDate = (room, dKey) => {
-    if (dKey > todayKey) {
-      // Future: derive from the live booking we already know about
-      const tenant = TENANTS.find(t => t.room === room.id);
-      if (tenant) {
-        const inOk = !tenant.checkIn || dKey >= tenant.checkIn.slice(0, 10);
-        const outOk = !tenant.checkOut || dKey <= tenant.checkOut.slice(0, 10);
-        if (inOk && outOk) return tenant.status;
-        return 'vacant';
-      }
-      return room.status === 'booked' || room.status === 'occupied' ? 'vacant' : room.status;
-    }
+  const stayOnDate = (room, dKey) => (staysByRoom[room.id] || []).find(s =>
+    dKey >= s.checkIn.slice(0, 10) && (!s.checkOut || dKey <= s.checkOut.slice(0, 10)));
+
+  const statusOnDate = (room, dKey, stay) => {
+    if (stay) return dKey >= todayKey ? stay.status : 'occupied';
     if (dKey === todayKey) return room.status;
-    // Past: latest logged status on/before that date
     const entries = logByRoom[room.id];
-    if (!entries || entries.length === 0) return null;
     let best = null;
-    for (const e of entries) {
-      if (e.effective_date <= dKey && (!best || e.effective_date > best.effective_date)) best = e;
-    }
-    return best ? best.status : null;
+    (entries || []).forEach(e => { if (e.effective_date <= dKey && (!best || e.effective_date > best.effective_date)) best = e; });
+    return best ? best.status : 'vacant';
   };
 
   const rooms = ROOMS.filter(r => filterType === 'all' || r.type === filterType).sort((a, b) => a.id.localeCompare(b.id));
-
   const thWeekday = ['อา','จ','อ','พ','พฤ','ศ','ส'];
 
   return (
-    <div className="tu-page">
-      <PageHeader title="ปฏิทินห้อง" subtitle="Room Calendar — ดูสถานะห้องรายวัน ย้อนดูประวัติ และดูช่วงการจองหลายวัน"
-        actions={<>
-          <Button variant="secondary" size="sm" onClick={() => setAnchor(d => addDays(d, -7))}>← สัปดาห์ก่อน</Button>
-          <Button variant="secondary" size="sm" onClick={() => { const d = new Date(); d.setHours(0,0,0,0); setAnchor(d); }}>วันนี้</Button>
-          <Button variant="secondary" size="sm" onClick={() => setAnchor(d => addDays(d, 7))}>สัปดาห์หน้า →</Button>
-        </>}
-      />
-
+    <>
       <Card padding={16}>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'center' }}>
           <Tabs value={filterType} onChange={setFilterType} options={[
@@ -2607,6 +2629,11 @@ function AdminRoomCalendar({ goto }) {
             { value: 'monthly', label: 'รายเดือน' },
             { value: 'all', label: 'ทั้งหมด' },
           ]} />
+          <div style={{ display: 'flex', gap: 6 }}>
+            <Button variant="secondary" size="sm" onClick={() => setAnchor(d => addDays(d, -7))}>← สัปดาห์ก่อน</Button>
+            <Button variant="secondary" size="sm" onClick={() => { const d = new Date(); d.setHours(0,0,0,0); setAnchor(d); }}>วันนี้</Button>
+            <Button variant="secondary" size="sm" onClick={() => setAnchor(d => addDays(d, 7))}>สัปดาห์หน้า →</Button>
+          </div>
           <div style={{ flex: 1 }} />
           <RoomLegend />
         </div>
@@ -2636,30 +2663,29 @@ function AdminRoomCalendar({ goto }) {
           <tbody>
             {rooms.map(r => (
               <tr key={r.id}>
-                <td style={{ position: 'sticky', left: 0, background: 'var(--surface)', zIndex: 1, padding: '8px 14px', borderBottom: '1px solid var(--border)', fontWeight: 600 }}>
+                <td style={{ position: 'sticky', left: 0, background: 'var(--surface)', zIndex: 1, padding: '8px 14px', borderBottom: '1px solid var(--border)', fontWeight: 600, cursor: 'pointer' }}
+                  onClick={() => setOpenRoom(r)}>
                   {r.id}
                   <div className="tu-muted" style={{ fontSize: 10.5, fontWeight: 400 }}>ชั้น {r.floor} • {r.type === 'monthly' ? 'รายเดือน' : 'รายวัน'}</div>
                 </td>
                 {days.map(d => {
                   const k = dateKey(d);
-                  const st = statusOnDate(r, k);
+                  const stay = stayOnDate(r, k);
+                  const st = statusOnDate(r, k, stay);
                   const isToday = k === todayKey;
                   return (
-                    <td key={k} title={st ? STATUS_META[st]?.th : 'ไม่มีข้อมูล'}
-                      onClick={() => { if (isToday) setSelected(r); }}
+                    <td key={k} title={stay ? `${stay.name} — ${STATUS_META[st]?.th}` : STATUS_META[st]?.th}
+                      onClick={() => setCell({ room: r, dateKey: k, stay, status: st })}
                       style={{
-                        borderBottom: '1px solid var(--border)', textAlign: 'center', padding: 6,
-                        cursor: isToday ? 'pointer' : 'default',
+                        borderBottom: '1px solid var(--border)', textAlign: 'center', padding: 6, cursor: 'pointer',
                         outline: isToday ? '2px solid var(--primary)' : 'none', outlineOffset: -2,
                       }}>
                       <div style={{
                         margin: '0 auto', width: '100%', height: 22, borderRadius: 6,
-                        background: st ? roomFill(st) : 'var(--surface-2)',
-                        color: st === 'occupied' ? '#fff' : 'var(--text)',
-                        display: 'flex', alignItems: 'center', justifyContent: 'center',
-                        fontSize: 9.5, opacity: st ? 1 : .4,
+                        background: roomFill(st), color: st === 'occupied' ? '#fff' : 'var(--text)',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9.5,
                       }}>
-                        {st ? (STATUS_META[st]?.th[0] || '') : '?'}
+                        {STATUS_META[st]?.th[0] || ''}
                       </div>
                     </td>
                   );
@@ -2671,11 +2697,183 @@ function AdminRoomCalendar({ goto }) {
         {loading && <div className="tu-muted" style={{ padding: 14, fontSize: 12.5 }}>กำลังโหลดประวัติ...</div>}
       </Card>
       <div className="tu-muted" style={{ fontSize: 11.5, marginTop: -4 }}>
-        วันที่ "?" สีจาง คือไม่มีข้อมูลประวัติย้อนหลัง (เริ่มเก็บประวัติตั้งแต่วันที่เปิดใช้ฟีเจอร์นี้) • คลิกที่ช่อง "วันนี้" เพื่อเปิดรายละเอียดห้อง
+        คลิกที่ชื่อห้อง (คอลัมน์ซ้าย) เพื่อเปิดรายละเอียดห้องปัจจุบัน • คลิกที่ช่องวันที่ใดก็ได้เพื่อดูรายละเอียดผู้เข้าพักของวันนั้น
       </div>
 
-      <RoomDetailModal room={selected} onClose={() => setSelected(null)} goto={goto} />
-    </div>
+      <RoomDetailModal room={openRoom} onClose={() => setOpenRoom(null)} goto={goto} />
+      {cell && <DayDetailModal cell={cell} onClose={() => setCell(null)} />}
+    </>
+  );
+}
+
+function DayDetailModal({ cell, onClose }) {
+  const { room, dateKey: dKey, stay, status } = cell;
+  const rate = room.rent;
+  const nights = stay ? (stay.checkOut ? Math.max(1, daysBetween(stay.checkIn.slice(0, 10), stay.checkOut.slice(0, 10))) : null) : null;
+  const total = nights && room.type === 'daily' ? nights * rate : null;
+  return (
+    <Modal open onClose={onClose} title={`ห้อง ${room.id} — ${formatDate(dKey)}`} width={420}
+      footer={<Button variant="secondary" onClick={onClose}>ปิด</Button>}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <Badge tone={STATUS_META[status]?.tone}>{STATUS_META[status]?.th}</Badge>
+        {stay ? (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10, padding: 14, background: 'var(--surface-2)', borderRadius: 12 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+              <Avatar name={stay.name} />
+              <div>
+                <div style={{ fontSize: 14, fontWeight: 600 }}>{stay.name}</div>
+                <div className="tu-muted" style={{ fontSize: 12 }}>{stay.phone || '—'}</div>
+              </div>
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+              <KV label="เช็คอิน" value={formatDate(stay.checkIn)} />
+              <KV label="แจ้งออก" value={stay.checkOut ? formatDate(stay.checkOut) : 'ยังไม่ระบุ'} />
+              {nights != null && <KV label="จำนวนคืน" value={`${nights} คืน`} />}
+              <KV label="ค่าเช่า" value={`฿${rate.toLocaleString()} / ${room.type === 'monthly' ? 'เดือน' : 'คืน'}`} />
+            </div>
+            {total != null && (
+              <div style={{ display: 'flex', justifyContent: 'space-between', paddingTop: 10, borderTop: '1px solid var(--border)', fontWeight: 600 }}>
+                <span>ค่าเช่ารวมตามจำนวนคืน</span>
+                <span style={{ color: 'var(--primary)' }}>฿{total.toLocaleString()}</span>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="tu-muted" style={{ fontSize: 13, padding: 14, background: 'var(--surface-2)', borderRadius: 12 }}>
+            ไม่มีผู้เข้าพักในวันนี้ — สถานะ {STATUS_META[status]?.th}
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+// ─── Occupancy summary by day / week / month / quarter / year ────────────
+const PERIOD_TYPES = [
+  { value: 'day', label: 'วัน' }, { value: 'week', label: 'สัปดาห์' },
+  { value: 'month', label: 'เดือน' }, { value: 'quarter', label: 'ไตรมาส' }, { value: 'year', label: 'ปี' },
+];
+
+function periodBounds(type, date) {
+  const d = new Date(date); d.setHours(0, 0, 0, 0);
+  if (type === 'day') return { start: d, end: d };
+  if (type === 'week') {
+    const start = addDays(d, -d.getDay());
+    return { start, end: addDays(start, 6) };
+  }
+  if (type === 'month') {
+    const start = new Date(d.getFullYear(), d.getMonth(), 1);
+    return { start, end: new Date(d.getFullYear(), d.getMonth() + 1, 0) };
+  }
+  if (type === 'quarter') {
+    const qStart = Math.floor(d.getMonth() / 3) * 3;
+    const start = new Date(d.getFullYear(), qStart, 1);
+    return { start, end: new Date(d.getFullYear(), qStart + 3, 0) };
+  }
+  return { start: new Date(d.getFullYear(), 0, 1), end: new Date(d.getFullYear(), 11, 31) };
+}
+
+function shiftPeriod(type, date, dir) {
+  const d = new Date(date);
+  if (type === 'day') return addDays(d, dir);
+  if (type === 'week') return addDays(d, dir * 7);
+  if (type === 'month') return new Date(d.getFullYear(), d.getMonth() + dir, 1);
+  if (type === 'quarter') return new Date(d.getFullYear(), d.getMonth() + dir * 3, 1);
+  return new Date(d.getFullYear() + dir, 0, 1);
+}
+
+function periodLabel(type, { start, end }) {
+  const thMonths = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+  const be = y => y + 543;
+  if (type === 'day') return formatDate(dateKey(start));
+  if (type === 'week') return `${formatDate(dateKey(start))} – ${formatDate(dateKey(end))}`;
+  if (type === 'month') return `${thMonths[start.getMonth()]} ${be(start.getFullYear())}`;
+  if (type === 'quarter') return `ไตรมาส ${Math.floor(start.getMonth() / 3) + 1} ปี ${be(start.getFullYear())}`;
+  return `ปี ${be(start.getFullYear())}`;
+}
+
+function RoomUsageSummary() {
+  const [periodType, setPeriodType] = React.useState('month');
+  const [anchor, setAnchor] = React.useState(new Date());
+  const [stays, setStays] = React.useState([]);
+  const [loading, setLoading] = React.useState(true);
+  const [filterType, setFilterType] = React.useState('daily');
+
+  const { start, end } = periodBounds(periodType, anchor);
+  const startKey = dateKey(start), endKey = dateKey(end);
+  const totalDays = daysBetween(startKey, endKey) + 1;
+
+  React.useEffect(() => {
+    (async () => { setLoading(true); setStays(await fetchStaysInRange(startKey, endKey)); setLoading(false); })();
+  }, [startKey, endKey]);
+
+  const rooms = ROOMS.filter(r => filterType === 'all' || r.type === filterType).sort((a, b) => a.id.localeCompare(b.id));
+  const rows = rooms.map(r => {
+    const roomStays = stays.filter(s => s.room === r.id);
+    let occupiedDays = 0;
+    roomStays.forEach(s => {
+      const sKey = s.checkIn.slice(0, 10) > startKey ? s.checkIn.slice(0, 10) : startKey;
+      const eKey = (s.checkOut && s.checkOut.slice(0, 10) < endKey) ? s.checkOut.slice(0, 10) : endKey;
+      occupiedDays += Math.max(0, daysBetween(sKey, eKey) + 1);
+    });
+    occupiedDays = Math.min(occupiedDays, totalDays);
+    const revenue = r.type === 'daily' ? occupiedDays * r.rent : roomStays.length * r.rent;
+    return { room: r, stayCount: roomStays.length, occupiedDays, occupancyPct: Math.round((occupiedDays / totalDays) * 100), revenue };
+  });
+  const totals = rows.reduce((acc, r) => ({ occupiedDays: acc.occupiedDays + r.occupiedDays, revenue: acc.revenue + r.revenue }), { occupiedDays: 0, revenue: 0 });
+
+  return (
+    <>
+      <Card padding={16}>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 14, alignItems: 'center' }}>
+          <Tabs value={periodType} onChange={setPeriodType} options={PERIOD_TYPES} />
+          <Tabs value={filterType} onChange={setFilterType} options={[
+            { value: 'daily', label: 'รายวัน' }, { value: 'monthly', label: 'รายเดือน' }, { value: 'all', label: 'ทั้งหมด' },
+          ]} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginLeft: 'auto' }}>
+            <Button variant="secondary" size="sm" onClick={() => setAnchor(d => shiftPeriod(periodType, d, -1))}>←</Button>
+            <div style={{ fontWeight: 600, fontSize: 13.5, minWidth: 160, textAlign: 'center' }}>{periodLabel(periodType, { start, end })}</div>
+            <Button variant="secondary" size="sm" onClick={() => setAnchor(d => shiftPeriod(periodType, d, 1))}>→</Button>
+            <Button variant="secondary" size="sm" onClick={() => setAnchor(new Date())}>วันนี้</Button>
+          </div>
+        </div>
+      </Card>
+
+      <Card padding={16}>
+        <div style={{ display: 'flex', gap: 24, marginBottom: 14 }}>
+          <KV label="วันในช่วงนี้" value={`${totalDays} วัน`} />
+          <KV label="วันเข้าพักรวมทุกห้อง" value={`${totals.occupiedDays} คืน`} />
+          <KV label="รายได้ประมาณ" value={`฿${totals.revenue.toLocaleString()}`} />
+        </div>
+        {loading ? (
+          <div className="tu-muted" style={{ fontSize: 12.5 }}>กำลังโหลด...</div>
+        ) : (
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr>
+                {['ห้อง', 'จำนวนการเข้าพัก', 'วันที่ใช้ห้อง', 'อัตราการเข้าพัก', 'รายได้ประมาณ'].map(h => (
+                  <th key={h} style={{ textAlign: h === 'ห้อง' ? 'left' : 'right', padding: '8px 10px', borderBottom: '1px solid var(--border)', color: 'var(--muted)', fontWeight: 500, fontSize: 12 }}>{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map(r => (
+                <tr key={r.room.id}>
+                  <td style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)', fontWeight: 600 }}>{r.room.id}</td>
+                  <td style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)', textAlign: 'right' }}>{r.stayCount}</td>
+                  <td style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)', textAlign: 'right' }}>{r.occupiedDays} / {totalDays}</td>
+                  <td style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)', textAlign: 'right' }}>{r.occupancyPct}%</td>
+                  <td style={{ padding: '8px 10px', borderBottom: '1px solid var(--border)', textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>฿{r.revenue.toLocaleString()}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Card>
+      <div className="tu-muted" style={{ fontSize: 11.5 }}>
+        รายได้เป็นค่าประมาณจากอัตราค่าเช่าปัจจุบัน × จำนวนคืน/เดือนที่เข้าพัก ไม่ใช่ยอดที่เรียกเก็บจริงจากใบแจ้งหนี้
+      </div>
+    </>
   );
 }
 
