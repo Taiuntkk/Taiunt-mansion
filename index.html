@@ -3164,8 +3164,13 @@ function RoomDetailModal({ room, onClose, goto }) {
       {room.status === 'booked' && !tenant && (
         <div>
           <SectionTitle>ผู้เข้าพัก</SectionTitle>
-          <div className="tu-muted" style={{ fontSize: 13, padding: '12px 14px', background: 'var(--surface-2)', borderRadius: 12 }}>
-            ไม่พบข้อมูลผู้จองสำหรับห้องนี้ — ตรวจสอบที่หน้า "การจอง" หรือเปลี่ยนสถานะห้องเป็นว่างแล้วสร้างการจองใหม่
+          <div style={{ fontSize: 13, padding: '12px 14px', background: '#fef2f2', border: '1px solid #fecaca', borderRadius: 12, display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <div style={{ color: '#b91c1c' }}>
+              ⚠️ ไม่พบข้อมูลผู้จองสำหรับห้องนี้ในระบบ — สถานะห้อง "จอง" นี้ค้างอยู่โดยไม่มีผู้จองจริง (มักเกิดจากการลบข้อมูลผู้จองโดยตรงใน Supabase)
+            </div>
+            <Button size="sm" variant="secondary" onClick={markVacant} disabled={marking} style={{ alignSelf: 'flex-start' }}>
+              {marking ? 'กำลังรีเซ็ต...' : 'รีเซ็ตห้องนี้เป็นห้องว่าง'}
+            </Button>
           </div>
         </div>
       )}
