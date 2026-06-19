@@ -7963,11 +7963,14 @@ function App() {
 
   const refreshData = React.useCallback(async () => {
     if (!window.sb) return;
-    const [{ data: dbRooms }, { data: dbTenants }, { data: dbAssets }] = await Promise.all([
+    const [{ data: dbRooms, error: roomsErr }, { data: dbTenants, error: tenantsErr }, { data: dbAssets, error: assetsErr }] = await Promise.all([
       window.sb.from('rooms').select('*').order('id'),
       window.sb.from('tenants').select('*').is('checked_out_at', null).order('id'),
       window.sb.from('asset_items').select('*').order('room_id').order('id'),
     ]);
+    if (roomsErr) console.error('[refreshData] rooms query failed:', roomsErr);
+    if (tenantsErr) console.error('[refreshData] tenants query failed:', tenantsErr);
+    if (assetsErr) console.error('[refreshData] asset_items query failed:', assetsErr);
     if (dbRooms) {
       const mapped = dbRooms.map(r => ({
         id: r.id, floor: r.floor, type: r.type, status: r.status,
