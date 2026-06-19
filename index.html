@@ -5719,7 +5719,7 @@ function AssetModal({ asset, onClose }) {
 
   if (!asset || !form) return null;
 
-  const persist = async (patch) => {
+  const persist = async (patch, closeOnSuccess) => {
     const next = { ...form, ...patch };
     setForm(next);
     setSaving(true);
@@ -5740,6 +5740,7 @@ function AssetModal({ asset, onClose }) {
       } else {
         Object.assign(asset, payload);
       }
+      if (closeOnSuccess) onClose();
     } catch (e) {
       setError(e.message || 'บันทึกไม่สำเร็จ กรุณาลองใหม่');
     } finally {
@@ -5758,7 +5759,7 @@ function AssetModal({ asset, onClose }) {
       footer={<>
         <Button variant="secondary" onClick={onClose}>ปิด</Button>
         <Button variant="secondary" onClick={reportRepair} disabled={saving}>แจ้งซ่อม</Button>
-        <Button icon={I.check} onClick={() => persist({})} disabled={saving}>{saving ? 'กำลังบันทึก...' : 'บันทึกการแก้ไข'}</Button>
+        <Button icon={I.check} onClick={() => persist({}, true)} disabled={saving}>{saving ? 'กำลังบันทึก...' : 'บันทึกการแก้ไข'}</Button>
       </>}>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 18 }}>
         <Badge tone={ASSET_CONDITION[form.condition].tone} dot>{ASSET_CONDITION[form.condition].th}</Badge>
