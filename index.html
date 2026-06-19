@@ -5552,6 +5552,8 @@ function AdminAssets() {
       <div style={{ padding: '8px 16px', borderRadius: 10, background: '#eef2ee', color: '#444', fontSize: 12, marginBottom: 16 }}>
         debug: เชื่อมฐานข้อมูลแล้ว {allItems.filter(i => i.id != null).length} / {allItems.length} รายการ
         &nbsp;•&nbsp; refreshData ถูกเรียกแล้ว: {window.TU?.refreshDataCalled ? 'ใช่' : 'ไม่'}
+        &nbsp;•&nbsp; แถวจาก DB จริง: {String(window.TU?.assetsRowCount ?? 'ยังไม่มีข้อมูล')}
+        &nbsp;•&nbsp; error: {window.TU?.assetsLoadError || '(ไม่มี)'}
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
@@ -7977,46 +7979,52 @@ function App() {
     window.TU = window.TU || {};
     window.TU.refreshDataCalled = true;
     if (!window.sb) return;
-    const [{ data: dbRooms, error: roomsErr }, { data: dbTenants, error: tenantsErr }, { data: dbAssets, error: assetsErr }] = await Promise.all([
-      window.sb.from('rooms').select('*').order('id'),
-      window.sb.from('tenants').select('*').is('checked_out_at', null).order('id'),
-      window.sb.from('asset_items').select('*').order('room_id').order('id'),
-    ]);
-    if (roomsErr) console.error('[refreshData] rooms query failed:', roomsErr);
-    if (tenantsErr) console.error('[refreshData] tenants query failed:', tenantsErr);
-    if (assetsErr) console.error('[refreshData] asset_items query failed:', assetsErr);
-    window.TU = window.TU || {};
-    window.TU.assetsLoadError = assetsErr ? (assetsErr.message || JSON.stringify(assetsErr)) : null;
-    if (dbRooms) {
-      const mapped = dbRooms.map(r => ({
-        id: r.id, floor: r.floor, type: r.type, status: r.status,
-        rent: Number(r.rent), size: Number(r.size), bed: r.bed || '',
-      }));
-      ROOMS.splice(0, ROOMS.length, ...mapped);
-    }
-    if (dbTenants) {
-      const mapped = dbTenants.map(t => ({
-        id: t.id, name: t.name, phone: t.phone || '',
-        room: t.room_id, type: t.type, checkIn: t.check_in, checkOut: t.check_out,
-        status: t.status, deposit: Number(t.deposit) || 0,
-        idCard: t.id_card || '', email: '',
-      }));
-      TENANTS.splice(0, TENANTS.length, ...mapped);
-    }
-    if (dbAssets) {
-      // Group flat asset_items rows back into the { room, type, items: [...] } shape AdminAssets expects.
-      const byRoom = new Map();
-      dbAssets.forEach(a => {
-        const room = ROOMS.find(r => r.id === a.room_id);
-        if (!byRoom.has(a.room_id)) byRoom.set(a.room_id, { room: a.room_id, type: room?.type || 'monthly', items: [] });
-        byRoom.get(a.room_id).items.push({
-          id: a.id, kind: a.kind, label: a.label, brand: a.brand || '', detail: a.detail || '',
-          spec: a.spec || '', year: a.year, condition: a.condition, notes: a.notes || '',
+    try {
+      const [{ data: dbRooms, error: roomsErr }, { data: dbTenants, error: tenantsErr }, { data: dbAssets, error: assetsErr }] = await Promise.all([
+        window.sb.from('rooms').select('*').order('id'),
+        window.sb.from('tenants').select('*').is('checked_out_at', null).order('id'),
+        window.sb.from('asset_items').select('*').order('room_id').order('id'),
+      ]);
+      if (roomsErr) console.error('[refreshData] rooms query failed:', roomsErr);
+      if (tenantsErr) console.error('[refreshData] tenants query failed:', tenantsErr);
+      if (assetsErr) console.error('[refreshData] asset_items query failed:', assetsErr);
+      window.TU.assetsLoadError = assetsErr ? (assetsErr.message || JSON.stringify(assetsErr)) : null;
+      window.TU.assetsRowCount = Array.isArray(dbAssets) ? dbAssets.length : (dbAssets === null ? 'null' : typeof dbAssets);
+      if (dbRooms) {
+        const mapped = dbRooms.map(r => ({
+          id: r.id, floor: r.floor, type: r.type, status: r.status,
+          rent: Number(r.rent), size: Number(r.size), bed: r.bed || '',
+        }));
+        ROOMS.splice(0, ROOMS.length, ...mapped);
+      }
+      if (dbTenants) {
+        const mapped = dbTenants.map(t => ({
+          id: t.id, name: t.name, phone: t.phone || '',
+          room: t.room_id, type: t.type, checkIn: t.check_in, checkOut: t.check_out,
+          status: t.status, deposit: Number(t.deposit) || 0,
+          idCard: t.id_card || '', email: '',
+        }));
+        TENANTS.splice(0, TENANTS.length, ...mapped);
+      }
+      if (dbAssets) {
+        // Group flat asset_items rows back into the { room, type, items: [...] } shape AdminAssets expects.
+        const byRoom = new Map();
+        dbAssets.forEach(a => {
+          const room = ROOMS.find(r => r.id === a.room_id);
+          if (!byRoom.has(a.room_id)) byRoom.set(a.room_id, { room: a.room_id, type: room?.type || 'monthly', items: [] });
+          byRoom.get(a.room_id).items.push({
+            id: a.id, kind: a.kind, label: a.label, brand: a.brand || '', detail: a.detail || '',
+            spec: a.spec || '', year: a.year, condition: a.condition, notes: a.notes || '',
+          });
         });
-      });
-      ASSETS.splice(0, ASSETS.length, ...byRoom.values());
+        ASSETS.splice(0, ASSETS.length, ...byRoom.values());
+      }
+      setDataVersion(v => v + 1);
+    } catch (ex) {
+      console.error('[refreshData] unexpected exception:', ex);
+      window.TU.assetsLoadError = 'EXCEPTION: ' + (ex?.message || String(ex));
+      setDataVersion(v => v + 1);
     }
-    setDataVersion(v => v + 1);
   }, []);
 
   React.useEffect(() => {
