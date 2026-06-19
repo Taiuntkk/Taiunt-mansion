@@ -5728,7 +5728,8 @@ function AssetModal({ asset, onClose }) {
         if (!d || d.length === 0) throw new Error('บันทึกไม่สำเร็จ: ไม่พบรายการนี้ในระบบ หรือไม่มีสิทธิ์แก้ไข กรุณารีโหลดหน้าใหม่แล้วลองอีกครั้ง');
         if (window.TU?.refreshData) await window.TU.refreshData();
       } else if (window.sb) {
-        throw new Error('บันทึกไม่สำเร็จ: ข้อมูลนี้ยังไม่เชื่อมกับฐานข้อมูล กรุณารีโหลดหน้าใหม่แล้วลองอีกครั้ง');
+        const { data: sess } = await window.sb.auth.getSession();
+        throw new Error(`บันทึกไม่สำเร็จ: ข้อมูลนี้ยังไม่เชื่อมกับฐานข้อมูล [debug: id=${JSON.stringify(asset.id)} session=${!!sess?.session} userId=${sess?.session?.user?.id || 'none'}]`);
       } else {
         Object.assign(asset, payload);
       }
