@@ -8985,22 +8985,35 @@ function CreateBookingModal({ onClose, onDone }) {
 
 // ── Sidebar ─────────────────────────────────────────────────────────────
 function Sidebar({ route, onNav }) {
-  const items = [
-  { v: 'dashboard', icon: I.dashboard, label: 'Dashboard', th: 'ภาพรวม' },
-  { v: 'rooms', icon: I.rooms, label: 'Rooms', th: 'ผังห้อง' },
-  { v: 'roomCalendar', icon: I.booking, label: 'Calendar', th: 'ปฏิทินห้อง' },
-  { v: 'bookings', icon: I.booking, label: 'Bookings', th: 'การจอง' },
-  { v: 'tenants', icon: I.tenants, label: 'Tenants', th: 'ผู้เข้าพัก' },
-  { v: 'assets', icon: I.assets, label: 'Assets', th: 'ทรัพย์สิน' },
-  { v: 'billing', icon: I.billing, label: 'Billing', th: 'ใบแจ้งหนี้' },
-  { v: 'cashreport', icon: I.finance, label: 'Cash Receipts', th: 'รายงานการรับเงิน' },
-  { v: 'repairs', icon: I.repairs, label: 'Maintenance', th: 'แจ้งซ่อม' },
-  { v: 'stock', icon: I.stock, label: 'Stock', th: 'คลังอุปกรณ์' },
-  { v: 'workorders', icon: I.workorder, label: 'Work Orders', th: 'งานจ้างซ่อม' },
-  { v: 'finance', icon: I.finance, label: 'Finance', th: 'การเงิน' },
-  { v: 'shop', icon: I.shop2, label: 'Shop', th: 'ร้านค้า' },
-  { v: 'promos', icon: I.promos, label: 'Promotions', th: 'โปรโมชั่น' },
-  { v: 'contact', icon: I.contact, label: 'Contact', th: 'ติดต่อ' }];
+  const groups = [
+    { title: 'ภาพรวม', items: [
+      { v: 'dashboard', icon: I.dashboard, label: 'Dashboard', th: 'ภาพรวม' },
+    ]},
+    { title: 'ห้องและผู้เข้าพัก', items: [
+      { v: 'rooms', icon: I.rooms, label: 'Rooms', th: 'ผังห้อง' },
+      { v: 'roomCalendar', icon: I.booking, label: 'Calendar', th: 'ปฏิทินห้อง' },
+      { v: 'bookings', icon: I.booking, label: 'Bookings', th: 'การจอง' },
+      { v: 'tenants', icon: I.tenants, label: 'Tenants', th: 'ผู้เข้าพัก' },
+    ]},
+    { title: 'การเงิน', items: [
+      { v: 'billing', icon: I.billing, label: 'Billing', th: 'ใบแจ้งหนี้' },
+      { v: 'cashreport', icon: I.finance, label: 'Cash Receipts', th: 'รายงานการรับเงิน' },
+      { v: 'finance', icon: I.finance, label: 'Finance', th: 'การเงิน' },
+    ]},
+    { title: 'ซ่อมบำรุงและทรัพย์สิน', items: [
+      { v: 'assets', icon: I.assets, label: 'Assets', th: 'ทรัพย์สิน' },
+      { v: 'repairs', icon: I.repairs, label: 'Maintenance', th: 'แจ้งซ่อม' },
+      { v: 'stock', icon: I.stock, label: 'Stock', th: 'คลังอุปกรณ์' },
+      { v: 'workorders', icon: I.workorder, label: 'Work Orders', th: 'งานจ้างซ่อม' },
+    ]},
+    { title: 'ร้านค้าและการตลาด', items: [
+      { v: 'shop', icon: I.shop2, label: 'Shop', th: 'ร้านค้า' },
+      { v: 'promos', icon: I.promos, label: 'Promotions', th: 'โปรโมชั่น' },
+    ]},
+    { title: 'อื่นๆ', items: [
+      { v: 'contact', icon: I.contact, label: 'Contact', th: 'ติดต่อ' },
+    ]},
+  ];
 
   return (
     <aside className="tu-sidebar">
@@ -9013,19 +9026,22 @@ function Sidebar({ route, onNav }) {
       </div>
 
       <nav style={{ padding: '0 12px', display: 'flex', flexDirection: 'column', gap: 2 }}>
-        <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '.08em', color: 'var(--muted)', padding: '8px 12px', textTransform: 'uppercase' }}>Workspace</div>
-        {items.map((it) => {
-          const active = route === it.v;
-          return (
-            <button key={it.v} onClick={() => onNav(it.v)} className={'tu-nav-item' + (active ? ' tu-nav-active' : '')}>
-              <span style={{ color: active ? 'var(--primary)' : 'var(--muted)', display: 'flex' }}>{it.icon}</span>
-              <span style={{ flex: 1, textAlign: 'left' }}>
-                <span style={{ display: 'block', fontSize: 13.5, fontWeight: 500 }}>{it.th}</span>
-                <span style={{ display: 'block', fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}>{it.label}</span>
-              </span>
-            </button>);
-
-        })}
+        {groups.map((group, gi) => (
+          <div key={group.title} style={{ marginTop: gi === 0 ? 0 : 10 }}>
+            <div style={{ fontSize: 10, fontWeight: 600, letterSpacing: '.08em', color: 'var(--muted)', padding: '8px 12px', textTransform: 'uppercase' }}>{group.title}</div>
+            {group.items.map((it) => {
+              const active = route === it.v;
+              return (
+                <button key={it.v} onClick={() => onNav(it.v)} className={'tu-nav-item' + (active ? ' tu-nav-active' : '')}>
+                  <span style={{ color: active ? 'var(--primary)' : 'var(--muted)', display: 'flex' }}>{it.icon}</span>
+                  <span style={{ flex: 1, textAlign: 'left' }}>
+                    <span style={{ display: 'block', fontSize: 13.5, fontWeight: 500 }}>{it.th}</span>
+                    <span style={{ display: 'block', fontSize: 11, color: 'var(--muted)', fontWeight: 400 }}>{it.label}</span>
+                  </span>
+                </button>);
+            })}
+          </div>
+        ))}
       </nav>
 
       <div style={{ flex: 1, minHeight: 12 }} />
