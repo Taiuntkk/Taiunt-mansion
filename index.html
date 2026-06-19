@@ -2569,7 +2569,13 @@ function AdminRooms({ goto }) {
 }
 
 // ─── Date-aware room status calendar (ปฏิทินห้อง) ─────────────────────────
-function dateKey(d) { return d.toISOString().slice(0, 10); }
+// Format using local date parts, not toISOString() (which converts to UTC and
+// shifts the date backward by a day for any positive-UTC-offset timezone,
+// e.g. Thailand UTC+7 — caused the "today" column to land one day off).
+function dateKey(d) {
+  const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, '0'), day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
 function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
 function daysBetween(aKey, bKey) {
   const p = k => { const [y, m, d] = k.split('-').map(Number); return Date.UTC(y, m - 1, d); };
