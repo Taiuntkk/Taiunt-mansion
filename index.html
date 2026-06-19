@@ -5495,6 +5495,19 @@ function AdminAssets() {
   const [kindFilter, setKindFilter] = React.useState('all');
   const [query, setQuery] = React.useState('');
   const [selected, setSelected] = React.useState(null);
+  const [showAdd, setShowAdd] = React.useState(false);
+
+  const exportCSV = () => {
+    const rows = [['ห้อง', 'ประเภทห้อง', 'หมวด', 'ยี่ห้อ', 'รุ่น/ประเภท', 'ขนาด/สเปก', 'ปีที่ติดตั้ง (พ.ศ.)', 'สภาพ']];
+    ASSETS.forEach(a => a.items.forEach(it => {
+      rows.push([a.room, a.type === 'monthly' ? 'รายเดือน' : 'รายวัน', ASSET_META[it.kind].th, it.brand, it.detail, it.spec, it.year + 543, ASSET_CONDITION[it.condition].th]);
+    }));
+    const csv = '﻿' + rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
+    a.download = `asset-registry-${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+  };
 
   // Flatten to per-item rows for the table view
   const allItems = ASSETS.flatMap(a => a.items.map(it => ({ ...it, room: a.room, type: a.type })));
@@ -5525,8 +5538,8 @@ function AdminAssets() {
     <div className="tu-page">
       <PageHeader title="ทรัพย์สินในห้อง" subtitle="Room Assets — ทะเบียนเครื่องใช้ไฟฟ้าและของในห้อง 101–409"
         actions={<>
-          <Button variant="secondary" size="sm" icon={I.download}>ส่งออกทะเบียน</Button>
-          <Button size="sm" icon={I.plus}>เพิ่มทรัพย์สิน</Button>
+          <Button variant="secondary" size="sm" icon={I.download} onClick={exportCSV}>ส่งออกทะเบียน</Button>
+          <Button size="sm" icon={I.plus} onClick={() => setShowAdd(true)}>เพิ่มทรัพย์สิน</Button>
         </>}
       />
 
@@ -5583,29 +5596,156 @@ function AdminAssets() {
       </Card>
 
       <AssetModal asset={selected} onClose={() => setSelected(null)} />
+      <AddAssetModal open={showAdd} onClose={() => setShowAdd(false)} onDone={() => setShowAdd(false)} />
     </div>
+  );
+}
+
+function AddAssetModal({ open, onClose, onDone }) {
+  const { ROOMS } = window.TUMP_DATA;
+  const blank = { room: ROOMS[0]?.id || '', kind: 'tv', brand: '', detail: '', spec: '', yearBE: new Date().getFullYear() + 543, condition: 'good' };
+  const [form, setForm] = React.useState(blank);
+  const [saving, setSaving] = React.useState(false);
+  const [error, setError] = React.useState(null);
+  const upd = (k, v) => setForm(p => ({ ...p, [k]: v }));
+
+  React.useEffect(() => {
+    if (open) setForm({ ...blank, room: ROOMS[0]?.id || '' });
+    setError(null);
+  }, [open]);
+
+  const kindLabel = { tv: 'ทีวี', ac: 'แอร์', fridge: 'ตู้เย็น', mattress: 'ฟูก' };
+
+  const handleSave = async () => {
+    if (!form.room) { setError('กรุณาเลือกห้อง'); return; }
+    setSaving(true); setError(null);
+    const newItem = {
+      room_id: form.room, kind: form.kind, label: kindLabel[form.kind],
+      brand: form.brand, detail: form.detail, spec: form.spec,
+      year: Number(form.yearBE) - 543, condition: form.condition,
+    };
+    try {
+      if (window.sb) {
+        const { error: e } = await window.sb.from('asset_items').insert(newItem);
+        if (e) throw e;
+        if (window.TU?.refreshData) await window.TU.refreshData();
+      } else {
+        const { ASSETS } = window.TUMP_DATA;
+        const group = ASSETS.find(a => a.room === form.room);
+        const room = ROOMS.find(r => r.id === form.room);
+        const item = { kind: form.kind, label: kindLabel[form.kind], brand: form.brand, detail: form.detail, spec: form.spec, year: newItem.year, condition: form.condition, notes: '' };
+        if (group) group.items.push(item);
+        else ASSETS.push({ room: form.room, type: room?.type || 'monthly', items: [item] });
+      }
+      onDone();
+    } catch (e) {
+      setError(e.message || 'เกิดข้อผิดพลาด กรุณาลองใหม่');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal open={open} onClose={onClose} title="เพิ่มทรัพย์สิน" width={480}
+      footer={<>
+        <Button variant="secondary" onClick={onClose} disabled={saving}>ยกเลิก</Button>
+        <Button onClick={handleSave} disabled={saving} icon={saving ? null : I.plus}>
+          {saving ? 'กำลังบันทึก...' : 'เพิ่มทรัพย์สิน'}
+        </Button>
+      </>}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 6, color: 'var(--muted)' }}>ห้อง</div>
+            <select value={form.room} onChange={e => upd('room', e.target.value)} className="tu-select" style={{ width: '100%' }}>
+              {ROOMS.map(r => <option key={r.id} value={r.id}>{r.id}</option>)}
+            </select>
+          </div>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 6, color: 'var(--muted)' }}>หมวด</div>
+            <select value={form.kind} onChange={e => upd('kind', e.target.value)} className="tu-select" style={{ width: '100%' }}>
+              <option value="tv">ทีวี</option>
+              <option value="ac">แอร์</option>
+              <option value="fridge">ตู้เย็น</option>
+              <option value="mattress">ฟูก</option>
+            </select>
+          </div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <Input label="ยี่ห้อ" value={form.brand} onChange={v => upd('brand', v)} />
+          <Input label="รุ่น / ประเภท" value={form.detail} onChange={v => upd('detail', v)} />
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <Input label="ขนาด / สเปก" value={form.spec} onChange={v => upd('spec', v)} />
+          <Input label="ปีที่ติดตั้ง (พ.ศ.)" type="number" value={form.yearBE} onChange={v => upd('yearBE', v)} />
+        </div>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 6, color: 'var(--muted)' }}>สภาพ</div>
+          <select value={form.condition} onChange={e => upd('condition', e.target.value)} className="tu-select" style={{ width: '100%' }}>
+            <option value="good">พร้อมใช้</option>
+            <option value="fair">ควรตรวจเช็ก</option>
+            <option value="repair">ต้องซ่อม</option>
+          </select>
+        </div>
+        {error && <div style={{ padding: '10px 14px', borderRadius: 10, background: '#fcd2d2', color: '#9b1c1c', fontSize: 13 }}>{error}</div>}
+      </div>
+    </Modal>
   );
 }
 
 function AssetModal({ asset, onClose }) {
   const { ASSET_META, ASSET_CONDITION } = window.TUMP_DATA;
-  if (!asset) return null;
+  const [form, setForm] = React.useState(null);
+  const [saving, setSaving] = React.useState(false);
+
+  React.useEffect(() => {
+    if (asset) setForm({ brand: asset.brand, detail: asset.detail, spec: asset.spec, yearBE: asset.year + 543, condition: asset.condition, notes: asset.notes || '' });
+  }, [asset]);
+
+  if (!asset || !form) return null;
+
+  const persist = async (patch) => {
+    const next = { ...form, ...patch };
+    setForm(next);
+    setSaving(true);
+    try {
+      const payload = {
+        brand: next.brand, detail: next.detail, spec: next.spec,
+        year: Number(next.yearBE) - 543, condition: next.condition, notes: next.notes,
+      };
+      if (window.sb && asset.id) {
+        await window.sb.from('asset_items').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', asset.id);
+        if (window.TU?.refreshData) await window.TU.refreshData();
+      } else {
+        Object.assign(asset, payload);
+      }
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const reportRepair = () => {
+    const stamp = new Date().toLocaleDateString('th-TH', { day: 'numeric', month: 'short', year: 'numeric' });
+    const note = `[${stamp}] แจ้งซ่อม`;
+    persist({ condition: 'repair', notes: form.notes ? `${form.notes}\n${note}` : note });
+  };
+
   return (
     <Modal open={!!asset} onClose={onClose} title={`${asset.label} • ห้อง ${asset.room}`} width={520}
       footer={<>
         <Button variant="secondary" onClick={onClose}>ปิด</Button>
-        <Button variant="secondary">แจ้งซ่อม</Button>
-        <Button icon={I.check}>บันทึกการแก้ไข</Button>
+        <Button variant="secondary" onClick={reportRepair} disabled={saving}>แจ้งซ่อม</Button>
+        <Button icon={I.check} onClick={() => persist({})} disabled={saving}>{saving ? 'กำลังบันทึก...' : 'บันทึกการแก้ไข'}</Button>
       </>}>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 18 }}>
-        <Badge tone={ASSET_CONDITION[asset.condition].tone} dot>{ASSET_CONDITION[asset.condition].th}</Badge>
+        <Badge tone={ASSET_CONDITION[form.condition].tone} dot>{ASSET_CONDITION[form.condition].th}</Badge>
         <span className="tu-muted" style={{ fontSize: 12 }}>{ASSET_META[asset.kind].en}</span>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-        <Input label="ยี่ห้อ" value={asset.brand} onChange={()=>{}} />
-        <Input label="รุ่น / ประเภท" value={asset.detail} onChange={()=>{}} />
-        <Input label="ขนาด / สเปก" value={asset.spec} onChange={()=>{}} />
-        <Input label="ปีที่ติดตั้ง (พ.ศ.)" value={asset.year + 543} onChange={()=>{}} />
+        <Input label="ยี่ห้อ" value={form.brand} onChange={(v) => setForm({ ...form, brand: v })} />
+        <Input label="รุ่น / ประเภท" value={form.detail} onChange={(v) => setForm({ ...form, detail: v })} />
+        <Input label="ขนาด / สเปก" value={form.spec} onChange={(v) => setForm({ ...form, spec: v })} />
+        <Input label="ปีที่ติดตั้ง (พ.ศ.)" type="number" value={form.yearBE} onChange={(v) => setForm({ ...form, yearBE: v })} />
       </div>
       <div style={{ marginTop: 14 }}>
         <div style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--muted)', marginBottom: 6 }}>สภาพปัจจุบัน</div>
@@ -5615,17 +5755,17 @@ function AssetModal({ asset, onClose }) {
             { v: 'fair', t: 'ควรตรวจเช็ก' },
             { v: 'repair', t: 'ต้องซ่อม' },
           ].map(o => (
-            <button key={o.v} style={{
+            <button key={o.v} onClick={() => setForm({ ...form, condition: o.v })} style={{
               flex: 1, padding: '10px 12px', borderRadius: 10, fontFamily: 'inherit', fontSize: 13, fontWeight: 500,
-              border: asset.condition === o.v ? '2px solid var(--primary)' : '1px solid var(--border)',
-              background: asset.condition === o.v ? 'var(--primary-soft)' : 'var(--surface)',
+              border: form.condition === o.v ? '2px solid var(--primary)' : '1px solid var(--border)',
+              background: form.condition === o.v ? 'var(--primary-soft)' : 'var(--surface)',
               color: 'var(--text)', cursor: 'pointer',
             }}>{o.t}</button>
           ))}
         </div>
       </div>
       <div style={{ marginTop: 14 }}>
-        <Input label="บันทึก / ประวัติการซ่อม" rows={3} value="" placeholder="เช่น ล้างแอร์ครั้งล่าสุด 12 มี.ค. 69" onChange={()=>{}} />
+        <Input label="บันทึก / ประวัติการซ่อม" rows={3} value={form.notes} placeholder="เช่น ล้างแอร์ครั้งล่าสุด 12 มี.ค. 69" onChange={(v) => setForm({ ...form, notes: v })} />
       </div>
     </Modal>
   );
@@ -7813,9 +7953,10 @@ function App() {
 
   const refreshData = React.useCallback(async () => {
     if (!window.sb) return;
-    const [{ data: dbRooms }, { data: dbTenants }] = await Promise.all([
+    const [{ data: dbRooms }, { data: dbTenants }, { data: dbAssets }] = await Promise.all([
       window.sb.from('rooms').select('*').order('id'),
       window.sb.from('tenants').select('*').is('checked_out_at', null).order('id'),
+      window.sb.from('asset_items').select('*').order('room_id').order('id'),
     ]);
     if (dbRooms) {
       const mapped = dbRooms.map(r => ({
@@ -7832,6 +7973,19 @@ function App() {
         idCard: t.id_card || '', email: '',
       }));
       TENANTS.splice(0, TENANTS.length, ...mapped);
+    }
+    if (dbAssets) {
+      // Group flat asset_items rows back into the { room, type, items: [...] } shape AdminAssets expects.
+      const byRoom = new Map();
+      dbAssets.forEach(a => {
+        const room = ROOMS.find(r => r.id === a.room_id);
+        if (!byRoom.has(a.room_id)) byRoom.set(a.room_id, { room: a.room_id, type: room?.type || 'monthly', items: [] });
+        byRoom.get(a.room_id).items.push({
+          id: a.id, kind: a.kind, label: a.label, brand: a.brand || '', detail: a.detail || '',
+          spec: a.spec || '', year: a.year, condition: a.condition, notes: a.notes || '',
+        });
+      });
+      ASSETS.splice(0, ASSETS.length, ...byRoom.values());
     }
     setDataVersion(v => v + 1);
   }, []);

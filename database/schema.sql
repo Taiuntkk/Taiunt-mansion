@@ -176,7 +176,9 @@ create table asset_items (
   detail      text,
   spec        text,
   year        int,
-  condition   asset_condition not null default 'good'
+  condition   asset_condition not null default 'good',
+  notes       text,
+  updated_at  timestamptz not null default now()
 );
 
 -- ── Maintenance stock (parts used for repairs) ──────────────────────────────
