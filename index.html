@@ -5717,9 +5717,12 @@ function AssetModal({ asset, onClose }) {
         year: Number(next.yearBE) - 543, condition: next.condition, notes: next.notes,
       };
       if (window.sb && asset.id) {
-        const { error: e } = await window.sb.from('asset_items').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', asset.id);
+        const { data: d, error: e } = await window.sb.from('asset_items').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', asset.id).select();
         if (e) throw e;
+        if (!d || d.length === 0) throw new Error('บันทึกไม่สำเร็จ: ไม่พบรายการนี้ในระบบ หรือไม่มีสิทธิ์แก้ไข กรุณารีโหลดหน้าใหม่แล้วลองอีกครั้ง');
         if (window.TU?.refreshData) await window.TU.refreshData();
+      } else if (window.sb) {
+        throw new Error('บันทึกไม่สำเร็จ: ข้อมูลนี้ยังไม่เชื่อมกับฐานข้อมูล กรุณารีโหลดหน้าใหม่แล้วลองอีกครั้ง');
       } else {
         Object.assign(asset, payload);
       }
