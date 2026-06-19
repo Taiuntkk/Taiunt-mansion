@@ -2431,6 +2431,27 @@ function AdminRooms({ goto }) {
   const [filterStatus, setFilterStatus] = React.useState('all');
   const [selected, setSelected] = React.useState(null);
   const [showAddRoom, setShowAddRoom] = React.useState(false);
+  const [fixingId, setFixingId] = React.useState(null);
+
+  // Rooms flagged as booked/occupied/notice should always have a matching active tenant
+  // row. If that row was removed outside the app's own flows (e.g. deleted directly in
+  // Supabase) the room status is left stranded — flag and offer a one-click repair.
+  const orphaned = ROOMS.filter(r => ['booked', 'occupied', 'notice'].includes(r.status) && !TENANTS.some(t => t.room === r.id));
+
+  const fixOrphan = async (room) => {
+    setFixingId(room.id);
+    try {
+      if (window.sb) {
+        await window.sb.from('rooms').update({ status: 'vacant' }).eq('id', room.id);
+        await logRoomStatus(room.id, 'vacant');
+        if (window.TU?.refreshData) await window.TU.refreshData();
+      } else {
+        room.status = 'vacant';
+      }
+    } finally {
+      setFixingId(null);
+    }
+  };
 
   const filtered = ROOMS.filter(r => {
     if (filterType !== 'all' && r.type !== filterType) return false;
@@ -2472,6 +2493,28 @@ function AdminRooms({ goto }) {
           <Button size="sm" icon={I.plus} onClick={() => setShowAddRoom(true)}>เพิ่มห้องใหม่</Button>
         </>}
       />
+
+      {/* Data consistency warning */}
+      {orphaned.length > 0 && (
+        <Card padding={16} style={{ background: '#fef2f2', border: '1px solid #fecaca' }}>
+          <div style={{ fontSize: 13.5, fontWeight: 600, color: '#b91c1c', marginBottom: 6 }}>
+            ⚠️ พบห้อง {orphaned.length} ห้องที่สถานะไม่ตรงกับข้อมูลผู้เข้าพักจริง
+          </div>
+          <div className="tu-muted" style={{ fontSize: 12.5, marginBottom: 10 }}>
+            ห้องเหล่านี้ติดสถานะ "จอง/เข้าพัก" แต่ไม่มีผู้เช่าผูกกับห้องในระบบ — มักเกิดจากการลบข้อมูลผู้จอง/ผู้เช่าโดยตรงใน Supabase โดยไม่ผ่านปุ่มในแอป กดรีเซ็ตเป็นห้องว่างแล้วสร้างการจอง/เช็คอินใหม่ให้ถูกต้อง
+          </div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+            {orphaned.map(r => (
+              <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: '#fff', border: '1px solid #fecaca', borderRadius: 8 }}>
+                <Badge tone={STATUS_META[r.status]?.tone}>{r.id} • {STATUS_META[r.status]?.th}</Badge>
+                <Button size="sm" variant="secondary" disabled={fixingId === r.id} onClick={() => fixOrphan(r)}>
+                  {fixingId === r.id ? 'กำลังรีเซ็ต...' : 'รีเซ็ตเป็นห้องว่าง'}
+                </Button>
+              </div>
+            ))}
+          </div>
+        </Card>
+      )}
 
       {/* Filters */}
       <Card padding={16}>
