@@ -5697,9 +5697,11 @@ function AssetModal({ asset, onClose }) {
   const { ASSET_META, ASSET_CONDITION } = window.TUMP_DATA;
   const [form, setForm] = React.useState(null);
   const [saving, setSaving] = React.useState(false);
+  const [error, setError] = React.useState(null);
 
   React.useEffect(() => {
     if (asset) setForm({ brand: asset.brand, detail: asset.detail, spec: asset.spec, yearBE: asset.year + 543, condition: asset.condition, notes: asset.notes || '' });
+    setError(null);
   }, [asset]);
 
   if (!asset || !form) return null;
@@ -5708,17 +5710,21 @@ function AssetModal({ asset, onClose }) {
     const next = { ...form, ...patch };
     setForm(next);
     setSaving(true);
+    setError(null);
     try {
       const payload = {
         brand: next.brand, detail: next.detail, spec: next.spec,
         year: Number(next.yearBE) - 543, condition: next.condition, notes: next.notes,
       };
       if (window.sb && asset.id) {
-        await window.sb.from('asset_items').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', asset.id);
+        const { error: e } = await window.sb.from('asset_items').update({ ...payload, updated_at: new Date().toISOString() }).eq('id', asset.id);
+        if (e) throw e;
         if (window.TU?.refreshData) await window.TU.refreshData();
       } else {
         Object.assign(asset, payload);
       }
+    } catch (e) {
+      setError(e.message || 'บันทึกไม่สำเร็จ กรุณาลองใหม่');
     } finally {
       setSaving(false);
     }
@@ -5767,6 +5773,7 @@ function AssetModal({ asset, onClose }) {
       <div style={{ marginTop: 14 }}>
         <Input label="บันทึก / ประวัติการซ่อม" rows={3} value={form.notes} placeholder="เช่น ล้างแอร์ครั้งล่าสุด 12 มี.ค. 69" onChange={(v) => setForm({ ...form, notes: v })} />
       </div>
+      {error && <div style={{ marginTop: 14, padding: '10px 14px', borderRadius: 10, background: '#fcd2d2', color: '#9b1c1c', fontSize: 13 }}>{error}</div>}
     </Modal>
   );
 }
