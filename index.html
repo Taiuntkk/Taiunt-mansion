@@ -5450,7 +5450,7 @@ function RepairModal({ repair, onClose }) {
         {status === 'in-progress' && <Button icon={I.check} onClick={closeJob}>ปิดงาน</Button>}
       </>}>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-        <Badge tone={RPR_STATUS[status].tone} dot>{RPR_STATUS[status].th}</Badge>
+        <Badge tone={RPR_STATUS[status || repair.status].tone} dot>{RPR_STATUS[status || repair.status].th}</Badge>
         <Badge tone={{ high: 'red', medium: 'amber', low: 'neutral' }[repair.priority]}>ความเร่งด่วน: {{ high: 'สูง', medium: 'ปานกลาง', low: 'ต่ำ' }[repair.priority]}</Badge>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
