@@ -553,6 +553,13 @@ const WO_REPLACEMENT_METHOD = {
   staff:    { th: 'พนักงานเปลี่ยนให้ (ไม่มีค่าใช้จ่าย)', tone: 'neutral' },
 };
 
+// สถานะการรับประกัน — ใช้ในหน้าค้นหาการซ่อม/อุปกรณ์ตามประกัน
+const WO_WARRANTY_STATUS = {
+  active:  { th: 'อยู่ในประกัน', tone: 'green' },
+  expired: { th: 'หมดประกันแล้ว', tone: 'red' },
+  none:    { th: 'ไม่มีประกัน', tone: 'neutral' },
+};
+
 // Monthly maintenance spend (this year, ปี 2569)
 const WO_MONTHLY = [
   { m: 'ม.ค.', repair: 3200, maintenance: 1500, install: 0 },
@@ -743,7 +750,7 @@ const RPR_STATUS = {
 };
 
 Object.assign(window, {
-  TUMP_DATA: { ROOMS, TENANTS, INVOICES, REPAIRS, PROMOTIONS, ANNOUNCEMENTS, REVENUE, ASSETS, ASSET_META, ASSET_CONDITION, STOCK_ITEMS, STOCK_IN, STOCK_OUT, WORK_ORDERS, VENDORS, WO_KIND, WO_STATUS, WO_VENDOR_STATUS, WO_OUTCOME, WO_REPLACEMENT_METHOD, WO_MONTHLY, EMPLOYEES, OPEX, OPEX_GROUP, OPEX_FREQ, PNL, PNL_INCOME_LABELS, PNL_EXPENSE_LABELS, UTILITY_RATE, METER_READINGS, SHOP_ITEMS, SHOP_IN, SHOP_OUT, SHOP_CAT_TONE, STATUS_META, INV_STATUS, RPR_STATUS },
+  TUMP_DATA: { ROOMS, TENANTS, INVOICES, REPAIRS, PROMOTIONS, ANNOUNCEMENTS, REVENUE, ASSETS, ASSET_META, ASSET_CONDITION, STOCK_ITEMS, STOCK_IN, STOCK_OUT, WORK_ORDERS, VENDORS, WO_KIND, WO_STATUS, WO_VENDOR_STATUS, WO_OUTCOME, WO_REPLACEMENT_METHOD, WO_WARRANTY_STATUS, WO_MONTHLY, EMPLOYEES, OPEX, OPEX_GROUP, OPEX_FREQ, PNL, PNL_INCOME_LABELS, PNL_EXPENSE_LABELS, UTILITY_RATE, METER_READINGS, SHOP_ITEMS, SHOP_IN, SHOP_OUT, SHOP_CAT_TONE, STATUS_META, INV_STATUS, RPR_STATUS },
 });
 })();
 
@@ -6302,6 +6309,7 @@ function AdminWorkOrders({ goto }) {
           <Tabs value={tab} onChange={setTab} options={[
             { value: 'orders', label: 'ใบสั่งซ่อม', count: WORK_ORDERS.length },
             { value: 'tracking', label: 'ติดตามงาน', count: tracking.length },
+            { value: 'warranty', label: 'ค้นหาประกัน', count: underWarranty.length },
             { value: 'vendors', label: 'ทะเบียนช่าง', count: VENDORS.length },
             { value: 'report', label: 'รายงานรายจ่าย' },
             { value: 'history', label: 'ประวัติรายห้อง / สินทรัพย์' },
@@ -6309,6 +6317,7 @@ function AdminWorkOrders({ goto }) {
         </div>
         {tab === 'orders' && <WorkOrderTable orders={WORK_ORDERS} onSelect={setSelected} />}
         {tab === 'tracking' && <WorkOrderTracking orders={tracking} vendors={VENDORS} onSelect={setSelected} />}
+        {tab === 'warranty' && <WorkOrderWarrantySearch orders={WORK_ORDERS} onSelect={setSelected} />}
         {tab === 'vendors' && <WorkOrderVendors vendors={VENDORS} onAdd={() => setAddingVendor(true)} onEdit={setEditingVendor} />}
         {tab === 'report' && <WorkOrderReport orders={WORK_ORDERS} monthly={WO_MONTHLY} />}
         {tab === 'history' && <WorkOrderHistory orders={WORK_ORDERS} onSelect={setSelected} />}
@@ -6392,6 +6401,82 @@ function WorkOrderTracking({ orders, vendors, onSelect }) {
         })}
       </tbody>
     </table>
+  );
+}
+
+function getWarrantyStatus(order, now) {
+  if (!order.warrantyUntil) return 'none';
+  return new Date(order.warrantyUntil) > now ? 'active' : 'expired';
+}
+
+// หน้าค้นหา — ค้นหางานซ่อม/บำรุงรักษา/ติดตั้งอุปกรณ์ ว่ายังอยู่ในประกันหรือหมดประกันแล้ว
+function WorkOrderWarrantySearch({ orders, onSelect }) {
+  const { WO_KIND, WO_WARRANTY_STATUS } = window.TUMP_DATA;
+  const [q, setQ] = React.useState('');
+  const [status, setStatus] = React.useState('all');
+  const now = new Date('2026-05-26');
+
+  const statusOf = (o) => getWarrantyStatus(o, now);
+  const counts = {
+    all: orders.length,
+    active: orders.filter(o => statusOf(o) === 'active').length,
+    expired: orders.filter(o => statusOf(o) === 'expired').length,
+    none: orders.filter(o => statusOf(o) === 'none').length,
+  };
+
+  const needle = q.trim().toLowerCase();
+  const filtered = orders.filter(o => {
+    if (status !== 'all' && statusOf(o) !== status) return false;
+    if (!needle) return true;
+    return [o.id, o.title, o.assetName, o.vendor, o.room].some(f => (f || '').toLowerCase().includes(needle));
+  });
+
+  return (
+    <div>
+      <div style={{ display: 'flex', padding: 16, borderBottom: '1px solid var(--border)', alignItems: 'center', gap: 12 }}>
+        <div style={{ width: 320 }}>
+          <Input prefix={I.search} placeholder="ค้นหาเลขที่, รายการ, อุปกรณ์, ห้อง, ผู้รับเหมา..." value={q} onChange={setQ} />
+        </div>
+        <div style={{ flex: 1 }} />
+        <Tabs value={status} onChange={setStatus} options={[
+          { value: 'all', label: 'ทั้งหมด', count: counts.all },
+          { value: 'active', label: 'อยู่ในประกัน', count: counts.active },
+          { value: 'expired', label: 'หมดประกันแล้ว', count: counts.expired },
+          { value: 'none', label: 'ไม่มีประกัน', count: counts.none },
+        ]} />
+      </div>
+      {filtered.length === 0 ? (
+        <div style={{ padding: 32, textAlign: 'center' }} className="tu-muted">ไม่พบงานซ่อม/อุปกรณ์ที่ตรงกับคำค้นหา</div>
+      ) : (
+        <table className="tu-table">
+          <thead>
+            <tr><th>เลขที่</th><th>ประเภท</th><th>รายการ / อุปกรณ์</th><th>สถานที่</th><th>ผู้รับเหมา</th>
+              <th>ระยะประกัน</th><th>สถานะประกัน</th></tr>
+          </thead>
+          <tbody>
+            {filtered.map(o => (
+              <tr key={o.id} className="tu-row-hover" onClick={() => onSelect(o)}>
+                <td style={{ fontFamily: 'ui-monospace,monospace', fontSize: 11.5 }}>{o.id}</td>
+                <td><Badge tone={WO_KIND[o.kind].tone}>{WO_KIND[o.kind].th}</Badge></td>
+                <td style={{ maxWidth: 240 }}>
+                  <div style={{ fontWeight: 500 }}>{o.title}</div>
+                  <div className="tu-muted" style={{ fontSize: 11.5 }}>{o.assetName}</div>
+                </td>
+                <td>
+                  <Badge tone={o.location === 'common' ? 'blue' : 'neutral'}>{o.location === 'common' ? 'ส่วนกลาง' : `ห้อง ${o.room}`}</Badge>
+                </td>
+                <td className="tu-muted" style={{ fontSize: 12.5 }}>{o.vendor}</td>
+                <td className="tu-muted" style={{ fontSize: 12 }}>
+                  {o.warrantyMonths > 0 ? `${o.warrantyMonths} เดือน` : 'ไม่มีการรับประกัน'}
+                  {o.warrantyUntil && <div style={{ fontSize: 11 }}>ถึง {formatDate(o.warrantyUntil)}</div>}
+                </td>
+                <td><Badge tone={WO_WARRANTY_STATUS[statusOf(o)].tone} dot>{WO_WARRANTY_STATUS[statusOf(o)].th}</Badge></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+    </div>
   );
 }
 
