@@ -6606,6 +6606,93 @@ function WorkOrderHistory({ orders, onSelect }) {
   );
 }
 
+function openWorkOrderWindow(order, vendors) {
+  const { WO_KIND, WO_STATUS, WO_OUTCOME } = window.TUMP_DATA;
+  const assignedVendor = (vendors || []).find(v => v.id === order.vendorId);
+  const vendorName = assignedVendor ? `${assignedVendor.firstName} ${assignedVendor.lastName} (${assignedVendor.company})` : (order.vendor || '—');
+  const vendorContact = assignedVendor ? assignedVendor.phone : '';
+  const inWarranty = order.warrantyUntil && new Date(order.warrantyUntil) > new Date('2026-05-26');
+  const w = window.open('', '_blank', 'width=820,height=1000,scrollbars=yes');
+  w.document.write(`<!DOCTYPE html><html lang="th"><head><meta charset="utf-8">
+  <title>ใบสั่งซ่อม ${order.id}</title>
+  <link href="https://fonts.googleapis.com/css2?family=Sarabun:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    *{margin:0;padding:0;box-sizing:border-box}
+    body{font-family:'Sarabun',sans-serif;font-size:14px;color:#111;background:#fff;padding:40px;max-width:700px;margin:0 auto}
+    .btn-print{position:fixed;top:16px;right:16px;padding:10px 22px;background:#16a34a;color:#fff;border:0;border-radius:8px;font-size:14px;cursor:pointer;font-family:inherit;font-weight:600}
+    .hdr{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:28px;padding-bottom:20px;border-bottom:2px solid #111}
+    .logo{font-size:20px;font-weight:700}.logo-sub{font-size:11px;color:#666;margin-top:3px}
+    .doc-title{font-size:18px;font-weight:700;text-align:right}
+    .doc-no{font-family:monospace;font-size:12px;color:#666;margin-top:4px;text-align:right}
+    .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px;margin-bottom:24px;padding:16px 20px;background:#f8f8f8;border-radius:8px}
+    .lbl{font-size:11px;color:#888;margin-bottom:3px}.val{font-size:14px;font-weight:600}
+    .val-sub{font-size:11.5px;color:#666;margin-top:2px}
+    .box{padding:14px 18px;border:1px solid #e0e0e0;border-radius:8px;margin-bottom:16px}
+    .box-title{font-size:12px;font-weight:700;color:#666;margin-bottom:6px}
+    .cost-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:20px}
+    .cost-val{font-size:20px;font-weight:700;margin:4px 0}
+    .sig-row{display:flex;justify-content:space-around;margin-top:56px}
+    .sig{text-align:center;width:180px}
+    .sig-line{border-top:1px solid #333;margin:52px 0 6px}
+    .sig-lbl{font-size:11.5px;color:#666}
+    @media print{.btn-print{display:none}body{padding:24px}}
+  </style></head><body>
+  <button class="btn-print" onclick="window.print()">พิมพ์ / บันทึก PDF</button>
+  <div class="hdr">
+    <div><div class="logo">ไท้อันแมนชั่น ปาร์ค</div><div class="logo-sub">TaiUnt Mansion Park — สำนักงาน 123 ถนนตัวอย่าง ขอนแก่น</div></div>
+    <div>
+      <div class="doc-title">ใบสั่งซ่อม / บำรุงรักษา</div>
+      <div class="doc-no">${WO_KIND[order.kind].th} — ${order.id}</div>
+    </div>
+  </div>
+  <div class="info-grid">
+    <div>
+      <div class="lbl">รายการ</div>
+      <div class="val">${order.title}</div>
+      <div class="val-sub">${order.assetName || ''}</div>
+    </div>
+    <div>
+      <div class="lbl">สถานที่</div>
+      <div class="val">${order.location === 'common' ? 'ส่วนกลาง' : `ห้อง ${order.room}`}</div>
+      <div class="val-sub">สถานะ: ${WO_STATUS[order.status].th}${order.outcome ? ` • ${WO_OUTCOME[order.outcome].th}` : ''}</div>
+    </div>
+  </div>
+  <div class="box">
+    <div class="box-title">อาการ / รายละเอียดงาน</div>
+    <div>${order.symptom || '—'}</div>
+  </div>
+  <div class="info-grid">
+    <div>
+      <div class="lbl">ผู้รับเหมา / ช่าง</div>
+      <div class="val">${vendorName}</div>
+      ${vendorContact ? `<div class="val-sub">${vendorContact}</div>` : ''}
+    </div>
+    <div>
+      <div class="lbl">กำหนดการ</div>
+      <div class="val">${formatDate(order.startDate)} – ${formatDate(order.endDate)}</div>
+      <div class="val-sub">งานซ่อมที่อ้างอิง: ${order.repairRef || '—'}</div>
+    </div>
+  </div>
+  <div class="cost-grid">
+    <div class="box">
+      <div class="box-title">ค่าดำเนินการ</div>
+      <div class="cost-val">฿${Number(order.cost).toLocaleString()}</div>
+      <div class="val-sub">${order.paid ? 'จ่ายแล้ว' : 'ค้างจ่ายผู้รับเหมา'}</div>
+    </div>
+    <div class="box">
+      <div class="box-title">การรับประกันงานซ่อม</div>
+      <div class="cost-val">${order.warrantyMonths > 0 ? `${order.warrantyMonths} เดือน` : '—'}</div>
+      <div class="val-sub">${order.warrantyMonths > 0 ? (inWarranty ? `ถึง ${formatDate(order.warrantyUntil)}` : 'หมดประกันแล้ว') : 'ไม่มีการรับประกัน'}</div>
+    </div>
+  </div>
+  <div class="sig-row">
+    <div class="sig"><div class="sig-line"></div><div class="sig-lbl">ผู้สั่งงาน / Authorized Signature</div><div class="sig-lbl">ไท้อันแมนชั่น ปาร์ค</div></div>
+    <div class="sig"><div class="sig-line"></div><div class="sig-lbl">ผู้รับงาน / Vendor Signature</div><div class="sig-lbl">${vendorName}</div></div>
+  </div>
+  </body></html>`);
+  w.document.close();
+}
+
 function WorkOrderModal({ order, onClose, goto, vendors = [] }) {
   const { WO_KIND, WO_STATUS, WO_OUTCOME, WO_VENDOR_STATUS } = window.TUMP_DATA;
   const now = new Date('2026-05-26');
@@ -6672,7 +6759,7 @@ function WorkOrderModal({ order, onClose, goto, vendors = [] }) {
     <Modal open={!!order} onClose={onClose} title={`ใบสั่งซ่อม ${order.id}`} width={620}
       footer={<>
         <Button variant="secondary" onClick={onClose}>ปิด</Button>
-        <Button variant="secondary" icon={I.print}>พิมพ์ใบสั่งซ่อม</Button>
+        <Button variant="secondary" icon={I.print} onClick={() => openWorkOrderWindow(order, vendors)}>พิมพ์ใบสั่งซ่อม</Button>
         {!paid && <Button icon={I.check} onClick={() => setPaid(true)}>จ่ายค่าดำเนินการ ฿{order.cost.toLocaleString()}</Button>}
       </>}>
       <div style={{ display: 'flex', gap: 8, marginBottom: 18, flexWrap: 'wrap' }}>
