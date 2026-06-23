@@ -6551,7 +6551,7 @@ function AdminWorkOrders({ goto }) {
     <div className="tu-page">
       <PageHeader title="งานจ้างซ่อม & บำรุงรักษา" subtitle="Work Orders — ออกใบสั่งซ่อม จ่ายค่าดำเนินการ รับประกัน และรายงานรายจ่าย"
         actions={<>
-          <Button variant="secondary" size="sm" icon={I.download}>รายงานรายจ่าย</Button>
+          <Button variant="secondary" size="sm" icon={I.download} onClick={() => setTab('report')}>รายงานรายจ่าย</Button>
           <Button size="sm" icon={I.plus} onClick={() => setCreating(true)}>ออกใบสั่งซ่อม</Button>
         </>}
       />
@@ -6810,33 +6810,82 @@ function VendorModal({ vendor, open, onClose, onSave }) {
   );
 }
 
+function monthLabelTH(key) {
+  const months = ['ม.ค.','ก.พ.','มี.ค.','เม.ย.','พ.ค.','มิ.ย.','ก.ค.','ส.ค.','ก.ย.','ต.ค.','พ.ย.','ธ.ค.'];
+  const [y, m] = key.split('-').map(Number);
+  return `${months[m - 1]} ${(y + 543).toString().slice(-2)}`;
+}
+
+function buildMonthlyRange(orders, from, to) {
+  const result = [];
+  let [y, m] = from.split('-').map(Number);
+  const [toY, toM] = to.split('-').map(Number);
+  while (y < toY || (y === toY && m <= toM)) {
+    const key = `${y}-${String(m).padStart(2, '0')}`;
+    const inMonth = orders.filter(o => o.startDate.slice(0, 7) === key);
+    result.push({
+      m: monthLabelTH(key),
+      repair: inMonth.filter(o => o.kind === 'repair').reduce((s, o) => s + o.cost, 0),
+      maintenance: inMonth.filter(o => o.kind === 'maintenance').reduce((s, o) => s + o.cost, 0),
+      install: inMonth.filter(o => o.kind === 'install').reduce((s, o) => s + o.cost, 0),
+    });
+    m++; if (m > 12) { m = 1; y++; }
+  }
+  return result;
+}
+
 function WorkOrderReport({ orders, monthly }) {
   const { WO_KIND } = window.TUMP_DATA;
-  const maxMonth = Math.max(...monthly.map(m => m.repair + m.maintenance + m.install));
+  const [period, setPeriod] = React.useState('year');
+  const orderMonths = orders.map(o => o.startDate.slice(0, 7)).sort();
+  const [rangeFrom, setRangeFrom] = React.useState(orderMonths[0] || '2026-05');
+  const [rangeTo, setRangeTo] = React.useState(orderMonths[orderMonths.length - 1] || '2026-05');
+
+  const filtered = period === 'year' ? orders : orders.filter(o => {
+    const key = o.startDate.slice(0, 7);
+    return key >= rangeFrom && key <= rangeTo;
+  });
+  const monthlyData = period === 'year' ? monthly : buildMonthlyRange(orders, rangeFrom, rangeTo);
+  const maxMonth = Math.max(1, ...monthlyData.map(m => m.repair + m.maintenance + m.install));
   const byKind = ['repair', 'maintenance', 'install'].map(k => ({
-    k, total: orders.filter(o => o.kind === k).reduce((s, o) => s + o.cost, 0),
-    count: orders.filter(o => o.kind === k).length,
+    k, total: filtered.filter(o => o.kind === k).reduce((s, o) => s + o.cost, 0),
+    count: filtered.filter(o => o.kind === k).length,
   }));
   const roomVsCommon = {
-    room: orders.filter(o => o.location === 'room').reduce((s, o) => s + o.cost, 0),
-    common: orders.filter(o => o.location === 'common').reduce((s, o) => s + o.cost, 0),
+    room: filtered.filter(o => o.location === 'room').reduce((s, o) => s + o.cost, 0),
+    common: filtered.filter(o => o.location === 'common').reduce((s, o) => s + o.cost, 0),
   };
-  const grand = orders.reduce((s, o) => s + o.cost, 0);
+  const grand = filtered.reduce((s, o) => s + o.cost, 0);
   const kindColor = { repair: '#d8a534', maintenance: '#3a76d4', install: 'var(--primary)' };
 
   return (
     <div style={{ padding: 20 }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18 }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 18, flexWrap: 'wrap', gap: 12 }}>
         <div>
-          <div style={{ fontSize: 15, fontWeight: 600 }}>รายจ่ายค่าซ่อมบำรุง ประจำปี 2569</div>
-          <div className="tu-muted" style={{ fontSize: 12, marginTop: 2 }}>รวมทั้งปี ฿{grand.toLocaleString()} • เฉลี่ย ฿{Math.round(grand/5).toLocaleString()}/เดือน</div>
+          <div style={{ fontSize: 15, fontWeight: 600 }}>
+            รายจ่ายค่าซ่อมบำรุง {period === 'year' ? 'ประจำปี 2569' : `${monthLabelTH(rangeFrom)} – ${monthLabelTH(rangeTo)}`}
+          </div>
+          <div className="tu-muted" style={{ fontSize: 12, marginTop: 2 }}>รวม ฿{grand.toLocaleString()} • เฉลี่ย ฿{Math.round(grand / monthlyData.length).toLocaleString()}/เดือน</div>
         </div>
-        <Button variant="secondary" size="sm" icon={I.download}>ส่งออก PDF</Button>
+        <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+          <Tabs value={period} onChange={setPeriod} options={[
+            { value: 'year', label: 'ประจำปี' },
+            { value: 'range', label: 'ช่วงเดือน' },
+          ]} />
+          {period === 'range' && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <div style={{ width: 150 }}><Input type="month" value={rangeFrom} onChange={v => { setRangeFrom(v); if (v > rangeTo) setRangeTo(v); }} /></div>
+              <span className="tu-muted" style={{ fontSize: 13 }}>ถึง</span>
+              <div style={{ width: 150 }}><Input type="month" value={rangeTo} min={rangeFrom} onChange={setRangeTo} /></div>
+            </div>
+          )}
+          <Button variant="secondary" size="sm" icon={I.download}>ส่งออก PDF</Button>
+        </div>
       </div>
 
       {/* Monthly stacked bars */}
-      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${monthly.length}, 1fr)`, gap: 20, alignItems: 'end', height: 200, marginBottom: 14 }}>
-        {monthly.map((m, i) => {
+      <div style={{ display: 'grid', gridTemplateColumns: `repeat(${monthlyData.length}, 1fr)`, gap: 20, alignItems: 'end', height: 200, marginBottom: 14 }}>
+        {monthlyData.map((m, i) => {
           const h = (v) => (v / maxMonth) * 170;
           const total = m.repair + m.maintenance + m.install;
           return (
