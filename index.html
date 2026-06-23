@@ -6677,7 +6677,7 @@ function WorkOrderModal({ order, onClose, goto, vendors = [] }) {
       </>}>
       <div style={{ display: 'flex', gap: 8, marginBottom: 18, flexWrap: 'wrap' }}>
         <Badge tone={WO_KIND[order.kind].tone}>{WO_KIND[order.kind].th}</Badge>
-        <Badge tone={WO_STATUS[status].tone} dot>{WO_STATUS[status].th}</Badge>
+        <Badge tone={WO_STATUS[status || order.status].tone} dot>{WO_STATUS[status || order.status].th}</Badge>
         {outcome && <Badge tone={WO_OUTCOME[outcome].tone} dot>{WO_OUTCOME[outcome].th}</Badge>}
         <Badge tone={order.location === 'common' ? 'blue' : 'neutral'}>{order.location === 'common' ? 'ส่วนกลาง' : `ห้อง ${order.room}`}</Badge>
       </div>
