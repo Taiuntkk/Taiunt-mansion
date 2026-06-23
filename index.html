@@ -522,6 +522,12 @@ const WO_STATUS = {
   done:         { th: 'เสร็จสิ้น', tone: 'green' },
 };
 
+// ผลการซ่อม — บันทึกหลังดำเนินการเสร็จ: ซ่อมได้ (ปิดงาน) หรือซ่อมไม่ได้ (พิจารณาซื้อทดแทน)
+const WO_OUTCOME = {
+  fixed:        { th: 'ซ่อมสำเร็จ', tone: 'green' },
+  unrepairable: { th: 'ซ่อมไม่สำเร็จ', tone: 'red' },
+};
+
 // Monthly maintenance spend (this year, ปี 2569)
 const WO_MONTHLY = [
   { m: 'ม.ค.', repair: 3200, maintenance: 1500, install: 0 },
@@ -712,7 +718,7 @@ const RPR_STATUS = {
 };
 
 Object.assign(window, {
-  TUMP_DATA: { ROOMS, TENANTS, INVOICES, REPAIRS, PROMOTIONS, ANNOUNCEMENTS, REVENUE, ASSETS, ASSET_META, ASSET_CONDITION, STOCK_ITEMS, STOCK_IN, STOCK_OUT, WORK_ORDERS, WO_KIND, WO_STATUS, WO_MONTHLY, EMPLOYEES, OPEX, OPEX_GROUP, OPEX_FREQ, PNL, PNL_INCOME_LABELS, PNL_EXPENSE_LABELS, UTILITY_RATE, METER_READINGS, SHOP_ITEMS, SHOP_IN, SHOP_OUT, SHOP_CAT_TONE, STATUS_META, INV_STATUS, RPR_STATUS },
+  TUMP_DATA: { ROOMS, TENANTS, INVOICES, REPAIRS, PROMOTIONS, ANNOUNCEMENTS, REVENUE, ASSETS, ASSET_META, ASSET_CONDITION, STOCK_ITEMS, STOCK_IN, STOCK_OUT, WORK_ORDERS, WO_KIND, WO_STATUS, WO_OUTCOME, WO_MONTHLY, EMPLOYEES, OPEX, OPEX_GROUP, OPEX_FREQ, PNL, PNL_INCOME_LABELS, PNL_EXPENSE_LABELS, UTILITY_RATE, METER_READINGS, SHOP_ITEMS, SHOP_IN, SHOP_OUT, SHOP_CAT_TONE, STATUS_META, INV_STATUS, RPR_STATUS },
 });
 })();
 
@@ -6224,7 +6230,7 @@ Object.assign(window, {
 // Work-order management — จัดจ้างซ่อม / บำรุงรักษา / ติดตั้งใหม่
 // Issue orders, pay + warranty, monthly/yearly expense report, history by room/asset.
 
-function AdminWorkOrders() {
+function AdminWorkOrders({ goto }) {
   const { WORK_ORDERS, WO_KIND, WO_STATUS, WO_MONTHLY } = window.TUMP_DATA;
   const [tab, setTab] = React.useState('orders');
   const [selected, setSelected] = React.useState(null);
@@ -6264,7 +6270,7 @@ function AdminWorkOrders() {
         {tab === 'history' && <WorkOrderHistory orders={WORK_ORDERS} onSelect={setSelected} />}
       </Card>
 
-      <WorkOrderModal order={selected} onClose={() => setSelected(null)} />
+      <WorkOrderModal order={selected} onClose={() => setSelected(null)} goto={goto} />
       <WorkOrderCreate open={creating} onClose={() => setCreating(false)} />
     </div>
   );
@@ -6442,12 +6448,31 @@ function WorkOrderHistory({ orders, onSelect }) {
   );
 }
 
-function WorkOrderModal({ order, onClose }) {
-  const { WO_KIND, WO_STATUS } = window.TUMP_DATA;
+function WorkOrderModal({ order, onClose, goto }) {
+  const { WO_KIND, WO_STATUS, WO_OUTCOME } = window.TUMP_DATA;
   const [paid, setPaid] = React.useState(false);
-  React.useEffect(() => { setPaid(order?.paid || false); }, [order]);
+  const [status, setStatus] = React.useState(null);
+  const [outcome, setOutcome] = React.useState(null);
+  React.useEffect(() => {
+    setPaid(order?.paid || false);
+    setStatus(order?.status || null);
+    setOutcome(order?.outcome || null);
+  }, [order]);
   if (!order) return null;
   const inWarranty = order.warrantyUntil && new Date(order.warrantyUntil) > new Date('2026-05-26');
+
+  const closeWorkOrder = (result) => {
+    order.status = 'done';
+    order.outcome = result;
+    setStatus('done');
+    setOutcome(result);
+  };
+
+  const goReplaceAsset = () => {
+    onClose();
+    if (goto) goto('assets');
+  };
+
   return (
     <Modal open={!!order} onClose={onClose} title={`ใบสั่งซ่อม ${order.id}`} width={620}
       footer={<>
@@ -6455,9 +6480,10 @@ function WorkOrderModal({ order, onClose }) {
         <Button variant="secondary" icon={I.print}>พิมพ์ใบสั่งซ่อม</Button>
         {!paid && <Button icon={I.check} onClick={() => setPaid(true)}>จ่ายค่าดำเนินการ ฿{order.cost.toLocaleString()}</Button>}
       </>}>
-      <div style={{ display: 'flex', gap: 8, marginBottom: 18 }}>
+      <div style={{ display: 'flex', gap: 8, marginBottom: 18, flexWrap: 'wrap' }}>
         <Badge tone={WO_KIND[order.kind].tone}>{WO_KIND[order.kind].th}</Badge>
-        <Badge tone={WO_STATUS[order.status].tone} dot>{WO_STATUS[order.status].th}</Badge>
+        <Badge tone={WO_STATUS[status].tone} dot>{WO_STATUS[status].th}</Badge>
+        {outcome && <Badge tone={WO_OUTCOME[outcome].tone} dot>{WO_OUTCOME[outcome].th}</Badge>}
         <Badge tone={order.location === 'common' ? 'blue' : 'neutral'}>{order.location === 'common' ? 'ส่วนกลาง' : `ห้อง ${order.room}`}</Badge>
       </div>
 
@@ -6477,7 +6503,7 @@ function WorkOrderModal({ order, onClose }) {
       </div>
 
       {/* Payment + warranty */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 16 }}>
         <div style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 16 }}>
           <SectionTitle>ค่าดำเนินการ</SectionTitle>
           <div style={{ fontSize: 22, fontWeight: 700, fontVariantNumeric: 'tabular-nums', margin: '6px 0' }}>฿{order.cost.toLocaleString()}</div>
@@ -6499,6 +6525,30 @@ function WorkOrderModal({ order, onClose }) {
           )}
         </div>
       </div>
+
+      {/* ผลการซ่อม — บันทึกหลังดำเนินการ */}
+      {status === 'in-progress' && (
+        <div style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 16 }}>
+          <SectionTitle>ผลการซ่อม</SectionTitle>
+          <div className="tu-muted" style={{ fontSize: 12.5, marginTop: 2, marginBottom: 12 }}>
+            หลังดำเนินการซ่อมเสร็จแล้ว ให้บันทึกผลลัพธ์เพื่อปิดงานซ่อม
+          </div>
+          <div style={{ display: 'flex', gap: 10 }}>
+            <Button icon={I.check} onClick={() => closeWorkOrder('fixed')}>ซ่อมได้ → ปิดงานซ่อม</Button>
+            <Button variant="secondary" onClick={() => closeWorkOrder('unrepairable')}>ซ่อมไม่ได้ → พิจารณาซื้อทดแทน</Button>
+          </div>
+        </div>
+      )}
+
+      {status === 'done' && outcome === 'unrepairable' && (
+        <div style={{ background: '#fcebec', border: '1px solid #f3c6c9', borderRadius: 12, padding: 16 }}>
+          <div style={{ fontSize: 13.5, fontWeight: 600, color: '#9b1c1c', marginBottom: 4 }}>ซ่อมไม่สำเร็จ</div>
+          <div style={{ fontSize: 13, color: '#9b1c1c', marginBottom: 12 }}>
+            มีค่าใช้จ่ายเกิดขึ้นแล้ว ฿{order.cost.toLocaleString()} แต่ทรัพย์สินนี้ซ่อมไม่ได้ แนะนำให้พิจารณาซื้อทดแทน
+          </div>
+          <Button size="sm" onClick={goReplaceAsset}>ไปหน้าทรัพย์สิน เพื่อเพิ่มรายการทดแทน</Button>
+        </div>
+      )}
     </Modal>
   );
 }
@@ -8149,7 +8199,7 @@ function App() {
               {route === 'cashreport' && <AdminCashReport />}
               {route === 'repairs' && <AdminRepairs />}
               {route === 'stock' && <AdminStock />}
-              {route === 'workorders' && <AdminWorkOrders />}
+              {route === 'workorders' && <AdminWorkOrders goto={goto} />}
               {route === 'finance' && <AdminFinance />}
               {route === 'shop' && <AdminShop />}
               {route === 'promos' && <AdminPromos />}
