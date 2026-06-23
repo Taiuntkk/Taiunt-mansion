@@ -5336,7 +5336,8 @@ function AdminRepairs({ goto }) {
 const REPAIR_CATEGORIES = ['แอร์', 'ไฟฟ้า', 'ประปา', 'อินเตอร์เน็ต', 'อื่นๆ'];
 
 function RepairCreateModal({ open, onClose }) {
-  const blank = { room: ROOMS[0].id, category: REPAIR_CATEGORIES[0], issue: '', priority: 'medium' };
+  const { EMPLOYEES } = window.TUMP_DATA;
+  const blank = { reporter: 'tenant', room: ROOMS[0].id, staffId: EMPLOYEES[0]?.id || '', category: REPAIR_CATEGORIES[0], issue: '', priority: 'medium' };
   const [form, setForm] = React.useState(blank);
   const [done, setDone] = React.useState(false);
   const upd = (k, v) => setForm(p => ({ ...p, [k]: v }));
@@ -5347,10 +5348,13 @@ function RepairCreateModal({ open, onClose }) {
   const submit = () => {
     if (!form.issue.trim()) return;
     const room = ROOMS.find(r => r.id === form.room);
+    const staff = EMPLOYEES.find(e => e.id === form.staffId);
     const nextNum = Math.max(...REPAIRS.map(r => Number(r.id.split('-')[2]))) + 1;
     REPAIRS.unshift({
       id: `RPR-2026-${String(nextNum).padStart(3, '0')}`,
-      room: form.room, tenant: room?.tenant || '—', type: room?.type || 'monthly',
+      room: form.room,
+      tenant: form.reporter === 'staff' ? `${staff?.name || 'เจ้าหน้าที่'} (เจ้าหน้าที่หอพัก)` : (room?.tenant || '—'),
+      type: form.reporter === 'staff' ? 'staff' : (room?.type || 'monthly'),
       category: form.category, issue: form.issue.trim(),
       date: '2026-05-26 12:00', status: 'pending', priority: form.priority, assignee: null,
     });
@@ -5376,8 +5380,29 @@ function RepairCreateModal({ open, onClose }) {
         <Button icon={I.check} onClick={submit} disabled={!form.issue.trim()}>บันทึก</Button>
       </>}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div>
+          <div style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--muted)', marginBottom: 8 }}>ผู้แจ้ง</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+            {[{ v: 'tenant', t: 'ผู้เช่า (รายวัน/รายเดือน)' }, { v: 'staff', t: 'เจ้าหน้าที่ของหอพัก' }].map(o => (
+              <button key={o.v} onClick={() => upd('reporter', o.v)} style={{
+                padding: '10px 8px', borderRadius: 10, fontFamily: 'inherit', fontSize: 13, fontWeight: 500,
+                border: form.reporter === o.v ? '2px solid var(--primary)' : '1px solid var(--border)',
+                background: form.reporter === o.v ? 'var(--primary-soft)' : 'var(--surface)',
+                color: form.reporter === o.v ? 'var(--primary)' : 'var(--text)', cursor: 'pointer',
+              }}>{o.t}</button>
+            ))}
+          </div>
+        </div>
+        {form.reporter === 'staff' && (
+          <label style={{ display: 'block' }}>
+            <div style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--muted)', marginBottom: 6 }}>เจ้าหน้าที่ผู้แจ้ง</div>
+            <select className="tu-select" value={form.staffId} onChange={(e) => upd('staffId', e.target.value)} style={{ width: '100%' }}>
+              {EMPLOYEES.map(e => <option key={e.id} value={e.id}>{e.name} ({e.role})</option>)}
+            </select>
+          </label>
+        )}
         <label style={{ display: 'block' }}>
-          <div style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--muted)', marginBottom: 6 }}>ห้อง</div>
+          <div style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--muted)', marginBottom: 6 }}>ห้อง / บริเวณที่พบปัญหา</div>
           <select className="tu-select" value={form.room} onChange={(e) => upd('room', e.target.value)} style={{ width: '100%' }}>
             {ROOMS.map(r => <option key={r.id} value={r.id}>ห้อง {r.id}{r.tenant ? ` — ${r.tenant}` : ''}</option>)}
           </select>
@@ -5418,6 +5443,9 @@ function RepairModal({ repair, onClose, goto }) {
   const [assigning, setAssigning] = React.useState(false);
   const [vendorId, setVendorId] = React.useState('');
   const [agreedCostInput, setAgreedCostInput] = React.useState('');
+  const [buying, setBuying] = React.useState(false);
+  const [supplierInput, setSupplierInput] = React.useState('');
+  const [buyCostInput, setBuyCostInput] = React.useState('');
   const [closing, setClosing] = React.useState(false);
   const [finalCostInput, setFinalCostInput] = React.useState('');
   const [note, setNote] = React.useState('');
@@ -5429,6 +5457,9 @@ function RepairModal({ repair, onClose, goto }) {
     setAssigning(false);
     setVendorId('');
     setAgreedCostInput('');
+    setBuying(false);
+    setSupplierInput('');
+    setBuyCostInput('');
     setClosing(false);
     setFinalCostInput('');
     setNote('');
@@ -5461,6 +5492,28 @@ function RepairModal({ repair, onClose, goto }) {
     setAssigning(false);
   };
 
+  const buyReplacement = () => {
+    const supplier = supplierInput.trim();
+    const cost = Number(buyCostInput);
+    if (!supplier || !buyCostInput || cost < 0) return;
+    const nextNum = Math.max(...WORK_ORDERS.map(w => Number(w.id.split('-')[2]))) + 1;
+    WORK_ORDERS.unshift({
+      id: `WO-2026-${String(nextNum).padStart(3, '0')}`,
+      kind: 'install', title: `ซื้ออุปกรณ์ทดแทน${repair.category} ห้อง ${repair.room}`,
+      location: 'room', room: repair.room, assetKind: REPAIR_CATEGORY_ASSET_KIND[repair.category] || 'other', assetName: repair.category,
+      symptom: repair.issue, vendor: supplier, vendorId: null,
+      dueDate: null, vendorResponse: 'accepted', vendorHistory: [],
+      startDate: '2026-05-26', endDate: null, status: 'in-progress',
+      cost, paid: false, warrantyMonths: 0, warrantyUntil: null,
+      repairRef: repair.id,
+    });
+    repair.assignee = supplier;
+    repair.status = 'in-progress';
+    setAssignee(repair.assignee);
+    setStatus('in-progress');
+    setBuying(false);
+  };
+
   const openClosing = () => {
     setFinalCostInput(String(linkedOrder?.cost ?? ''));
     setClosing(true);
@@ -5486,6 +5539,7 @@ function RepairModal({ repair, onClose, goto }) {
     <Modal open={!!repair} onClose={onClose} title={`แจ้งซ่อม ${repair.id}`} width={520}
       footer={<>
         <Button variant="secondary" onClick={onClose}>ปิด</Button>
+        {status === 'pending' && <Button variant="secondary" onClick={() => setBuying(true)}>ซื้ออุปกรณ์ทดแทน</Button>}
         {status === 'pending' && <Button onClick={() => setAssigning(true)}>มอบหมายช่าง</Button>}
         {status === 'in-progress' && <Button icon={I.check} onClick={openClosing}>ปิดงาน</Button>}
       </>}>
@@ -5498,14 +5552,14 @@ function RepairModal({ repair, onClose, goto }) {
         <KV label="ผู้แจ้ง" value={repair.tenant} />
         <KV label="หมวด" value={repair.category} />
         <KV label="วันที่แจ้ง" value={repair.date} />
-        <KV label="ช่างผู้รับ" value={assignee || 'ยังไม่มอบหมาย'} />
+        <KV label={linkedOrder?.kind === 'install' ? 'ร้านค้า/ผู้จัดหา' : 'ช่างผู้รับ'} value={assignee || 'ยังไม่มอบหมาย'} />
         {linkedOrder && <KV label="ราคาตกลงเบื้องต้น / ค่าใช้จ่ายจริง" value={`฿${linkedOrder.cost.toLocaleString()}`} />}
         {status === 'done' && linkedOrder && <KV label="สถานะการจ่ายเงิน" value={linkedOrder.paid ? 'จ่ายช่างแล้ว' : 'ค้างจ่าย'} />}
         {completedAt && <KV label="ปิดงานเมื่อ" value={completedAt} />}
       </div>
       {linkedOrder && (
         <div style={{ marginTop: 12 }}>
-          <button className="tu-link" onClick={() => goto && goto('workorders')}>ดูใบสั่งจ้างซ่อม {linkedOrder.id} ในหน้าจ้างซ่อม →</button>
+          <button className="tu-link" onClick={() => goto && goto('workorders')}>ดูใบสั่ง{linkedOrder.kind === 'install' ? 'ซื้อ' : 'จ้างซ่อม'} {linkedOrder.id} ในหน้าจ้างซ่อม →</button>
         </div>
       )}
       {assigning && (
@@ -5520,6 +5574,18 @@ function RepairModal({ repair, onClose, goto }) {
           <div style={{ display: 'flex', gap: 8 }}>
             <Input style={{ flex: 1 }} prefix="฿" type="number" value={agreedCostInput} onChange={setAgreedCostInput} placeholder="ราคาตกลงเบื้องต้น เช่น 1200" />
             <Button onClick={assignTech} disabled={!vendorId || !agreedCostInput}>ยืนยัน</Button>
+          </div>
+        </div>
+      )}
+      {buying && (
+        <div style={{ marginTop: 16, border: '1px solid var(--border)', borderRadius: 10, padding: 14 }}>
+          <div className="tu-muted" style={{ fontSize: 12, marginBottom: 8 }}>ระบุร้านค้า/ผู้จัดหาและค่าใช้จ่าย — จะออกใบสั่งซื้อในหน้า "จ้างซ่อม" ให้อัตโนมัติ (ไม่ต้องระบุช่าง)</div>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
+            <Input style={{ flex: 1 }} value={supplierInput} onChange={setSupplierInput} placeholder="ชื่อร้านค้า/ผู้จัดหา" />
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Input style={{ flex: 1 }} prefix="฿" type="number" value={buyCostInput} onChange={setBuyCostInput} placeholder="ค่าใช้จ่ายโดยประมาณ" />
+            <Button onClick={buyReplacement} disabled={!supplierInput.trim() || !buyCostInput}>ยืนยัน</Button>
           </div>
         </div>
       )}
