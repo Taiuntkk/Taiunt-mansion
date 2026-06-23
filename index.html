@@ -5285,11 +5285,12 @@ function ReceiptModal({ invoice, onClose }) {
 function AdminRepairs() {
   const [tab, setTab] = React.useState('all');
   const [selected, setSelected] = React.useState(null);
+  const [creating, setCreating] = React.useState(false);
   const filtered = tab === 'all' ? REPAIRS : REPAIRS.filter(r => r.status === tab);
   return (
     <div className="tu-page">
       <PageHeader title="แจ้งซ่อม" subtitle="Maintenance — ติดตามและจัดการคำขอแจ้งซ่อมจากผู้เข้าพัก"
-        actions={<Button size="sm" icon={I.plus}>เพิ่มงานซ่อม</Button>} />
+        actions={<Button size="sm" icon={I.plus} onClick={() => setCreating(true)}>เพิ่มงานซ่อม</Button>} />
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 16 }}>
         <Stat label="งานทั้งหมด" value={REPAIRS.length} icon={I.repairs} />
         <Stat label="รอรับเรื่อง" value={REPAIRS.filter(r=>r.status==='pending').length} sub="ต้องมอบหมายช่าง" />
@@ -5327,21 +5328,129 @@ function AdminRepairs() {
         </table>
       </Card>
       <RepairModal repair={selected} onClose={() => setSelected(null)} />
+      <RepairCreateModal open={creating} onClose={() => setCreating(false)} />
     </div>
   );
 }
 
+const REPAIR_CATEGORIES = ['แอร์', 'ไฟฟ้า', 'ประปา', 'อินเตอร์เน็ต', 'อื่นๆ'];
+
+function RepairCreateModal({ open, onClose }) {
+  const blank = { room: ROOMS[0].id, category: REPAIR_CATEGORIES[0], issue: '', priority: 'medium' };
+  const [form, setForm] = React.useState(blank);
+  const [done, setDone] = React.useState(false);
+  const upd = (k, v) => setForm(p => ({ ...p, [k]: v }));
+
+  React.useEffect(() => { if (open) { setForm(blank); setDone(false); } }, [open]);
+  if (!open) return null;
+
+  const submit = () => {
+    if (!form.issue.trim()) return;
+    const room = ROOMS.find(r => r.id === form.room);
+    const nextNum = Math.max(...REPAIRS.map(r => Number(r.id.split('-')[2]))) + 1;
+    REPAIRS.unshift({
+      id: `RPR-2026-${String(nextNum).padStart(3, '0')}`,
+      room: form.room, tenant: room?.tenant || '—', type: room?.type || 'monthly',
+      category: form.category, issue: form.issue.trim(),
+      date: '2026-05-26 12:00', status: 'pending', priority: form.priority, assignee: null,
+    });
+    setDone(true);
+  };
+
+  if (done) {
+    return (
+      <Modal open={open} onClose={onClose} title="แจ้งซ่อมสำเร็จ" width={420} footer={<Button onClick={onClose}>เสร็จสิ้น</Button>}>
+        <div style={{ textAlign: 'center', padding: '20px 0' }}>
+          <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'var(--primary-soft)', color: 'var(--primary)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>{I.check}</div>
+          <div style={{ fontSize: 15, fontWeight: 600 }}>บันทึกงานซ่อมเรียบร้อย</div>
+          <div className="tu-muted" style={{ fontSize: 13, marginTop: 6 }}>ห้อง {form.room} • {form.category}</div>
+        </div>
+      </Modal>
+    );
+  }
+
+  return (
+    <Modal open={open} onClose={onClose} title="เพิ่มงานซ่อม" width={480}
+      footer={<>
+        <Button variant="secondary" onClick={onClose}>ยกเลิก</Button>
+        <Button icon={I.check} onClick={submit} disabled={!form.issue.trim()}>บันทึก</Button>
+      </>}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <label style={{ display: 'block' }}>
+          <div style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--muted)', marginBottom: 6 }}>ห้อง</div>
+          <select className="tu-select" value={form.room} onChange={(e) => upd('room', e.target.value)} style={{ width: '100%' }}>
+            {ROOMS.map(r => <option key={r.id} value={r.id}>ห้อง {r.id}{r.tenant ? ` — ${r.tenant}` : ''}</option>)}
+          </select>
+        </label>
+        <label style={{ display: 'block' }}>
+          <div style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--muted)', marginBottom: 6 }}>หมวด</div>
+          <select className="tu-select" value={form.category} onChange={(e) => upd('category', e.target.value)} style={{ width: '100%' }}>
+            {REPAIR_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </label>
+        <Input label="รายละเอียดที่แจ้ง" rows={3} value={form.issue} onChange={(v) => upd('issue', v)} placeholder="อธิบายอาการที่พบ" />
+        <div>
+          <div style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--muted)', marginBottom: 8 }}>ความเร่งด่วน</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8 }}>
+            {[{ v: 'low', t: 'ต่ำ' }, { v: 'medium', t: 'ปานกลาง' }, { v: 'high', t: 'สูง' }].map(o => (
+              <button key={o.v} onClick={() => upd('priority', o.v)} style={{
+                padding: '10px 8px', borderRadius: 10, fontFamily: 'inherit', fontSize: 13, fontWeight: 500,
+                border: form.priority === o.v ? '2px solid var(--primary)' : '1px solid var(--border)',
+                background: form.priority === o.v ? 'var(--primary-soft)' : 'var(--surface)',
+                color: form.priority === o.v ? 'var(--primary)' : 'var(--text)', cursor: 'pointer',
+              }}>{o.t}</button>
+            ))}
+          </div>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
 function RepairModal({ repair, onClose }) {
+  const [status, setStatus] = React.useState(null);
+  const [assignee, setAssignee] = React.useState(null);
+  const [completedAt, setCompletedAt] = React.useState(null);
+  const [assigning, setAssigning] = React.useState(false);
+  const [assigneeInput, setAssigneeInput] = React.useState('');
+  const [note, setNote] = React.useState('');
+
+  React.useEffect(() => {
+    setStatus(repair?.status || null);
+    setAssignee(repair?.assignee || null);
+    setCompletedAt(repair?.completedAt || null);
+    setAssigning(false);
+    setAssigneeInput('');
+    setNote('');
+  }, [repair]);
+
   if (!repair) return null;
+
+  const assignTech = () => {
+    if (!assigneeInput.trim()) return;
+    repair.assignee = assigneeInput.trim();
+    repair.status = 'in-progress';
+    setAssignee(repair.assignee);
+    setStatus('in-progress');
+    setAssigning(false);
+  };
+
+  const closeJob = () => {
+    repair.status = 'done';
+    repair.completedAt = '2026-05-26 12:00';
+    setStatus('done');
+    setCompletedAt(repair.completedAt);
+  };
+
   return (
     <Modal open={!!repair} onClose={onClose} title={`แจ้งซ่อม ${repair.id}`} width={520}
       footer={<>
         <Button variant="secondary" onClick={onClose}>ปิด</Button>
-        {repair.status === 'pending' && <Button>มอบหมายช่าง</Button>}
-        {repair.status === 'in-progress' && <Button icon={I.check}>ปิดงาน</Button>}
+        {status === 'pending' && <Button onClick={() => setAssigning(true)}>มอบหมายช่าง</Button>}
+        {status === 'in-progress' && <Button icon={I.check} onClick={closeJob}>ปิดงาน</Button>}
       </>}>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
-        <Badge tone={RPR_STATUS[repair.status].tone} dot>{RPR_STATUS[repair.status].th}</Badge>
+        <Badge tone={RPR_STATUS[status].tone} dot>{RPR_STATUS[status].th}</Badge>
         <Badge tone={{ high: 'red', medium: 'amber', low: 'neutral' }[repair.priority]}>ความเร่งด่วน: {{ high: 'สูง', medium: 'ปานกลาง', low: 'ต่ำ' }[repair.priority]}</Badge>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
@@ -5349,16 +5458,25 @@ function RepairModal({ repair, onClose }) {
         <KV label="ผู้แจ้ง" value={repair.tenant} />
         <KV label="หมวด" value={repair.category} />
         <KV label="วันที่แจ้ง" value={repair.date} />
-        <KV label="ช่างผู้รับ" value={repair.assignee || 'ยังไม่มอบหมาย'} />
-        {repair.completedAt && <KV label="ปิดงานเมื่อ" value={repair.completedAt} />}
+        <KV label="ช่างผู้รับ" value={assignee || 'ยังไม่มอบหมาย'} />
+        {completedAt && <KV label="ปิดงานเมื่อ" value={completedAt} />}
       </div>
+      {assigning && (
+        <div style={{ marginTop: 16, border: '1px solid var(--border)', borderRadius: 10, padding: 14 }}>
+          <div className="tu-muted" style={{ fontSize: 12, marginBottom: 8 }}>มอบหมายช่างผู้รับเรื่อง</div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Input style={{ flex: 1 }} value={assigneeInput} onChange={setAssigneeInput} placeholder="ชื่อช่าง เช่น ช่างสมศักดิ์" />
+            <Button onClick={assignTech} disabled={!assigneeInput.trim()}>ยืนยัน</Button>
+          </div>
+        </div>
+      )}
       <div style={{ marginTop: 16 }}>
         <div className="tu-muted" style={{ fontSize: 12, marginBottom: 6 }}>รายละเอียดที่ผู้เข้าพักแจ้ง</div>
         <div style={{ padding: 14, background: 'var(--surface-2)', borderRadius: 10, fontSize: 13.5 }}>{repair.issue}</div>
       </div>
       <div style={{ marginTop: 16 }}>
         <div className="tu-muted" style={{ fontSize: 12, marginBottom: 6 }}>บันทึกภายใน</div>
-        <Input rows={3} value="" placeholder="เพิ่มบันทึกถึงทีมช่าง..." onChange={()=>{}} />
+        <Input rows={3} value={note} placeholder="เพิ่มบันทึกถึงทีมช่าง..." onChange={setNote} />
       </div>
     </Modal>
   );
