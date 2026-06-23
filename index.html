@@ -5408,11 +5408,13 @@ function RepairCreateModal({ open, onClose }) {
 }
 
 function RepairModal({ repair, onClose }) {
+  const { VENDORS } = window.TUMP_DATA;
+  const activeVendors = VENDORS.filter(v => v.active);
   const [status, setStatus] = React.useState(null);
   const [assignee, setAssignee] = React.useState(null);
   const [completedAt, setCompletedAt] = React.useState(null);
   const [assigning, setAssigning] = React.useState(false);
-  const [assigneeInput, setAssigneeInput] = React.useState('');
+  const [vendorId, setVendorId] = React.useState('');
   const [note, setNote] = React.useState('');
 
   React.useEffect(() => {
@@ -5420,15 +5422,17 @@ function RepairModal({ repair, onClose }) {
     setAssignee(repair?.assignee || null);
     setCompletedAt(repair?.completedAt || null);
     setAssigning(false);
-    setAssigneeInput('');
+    setVendorId('');
     setNote('');
   }, [repair]);
 
   if (!repair) return null;
 
   const assignTech = () => {
-    if (!assigneeInput.trim()) return;
-    repair.assignee = assigneeInput.trim();
+    const vendor = activeVendors.find(v => v.id === vendorId);
+    if (!vendor) return;
+    repair.vendorId = vendor.id;
+    repair.assignee = `${vendor.firstName} ${vendor.lastName}`;
     repair.status = 'in-progress';
     setAssignee(repair.assignee);
     setStatus('in-progress');
@@ -5463,10 +5467,13 @@ function RepairModal({ repair, onClose }) {
       </div>
       {assigning && (
         <div style={{ marginTop: 16, border: '1px solid var(--border)', borderRadius: 10, padding: 14 }}>
-          <div className="tu-muted" style={{ fontSize: 12, marginBottom: 8 }}>มอบหมายช่างผู้รับเรื่อง</div>
+          <div className="tu-muted" style={{ fontSize: 12, marginBottom: 8 }}>มอบหมายช่างผู้รับเรื่อง (จากทะเบียนช่าง)</div>
           <div style={{ display: 'flex', gap: 8 }}>
-            <Input style={{ flex: 1 }} value={assigneeInput} onChange={setAssigneeInput} placeholder="ชื่อช่าง เช่น ช่างสมศักดิ์" />
-            <Button onClick={assignTech} disabled={!assigneeInput.trim()}>ยืนยัน</Button>
+            <select className="tu-select" style={{ flex: 1 }} value={vendorId} onChange={(e) => setVendorId(e.target.value)}>
+              <option value="">เลือกช่าง...</option>
+              {activeVendors.map(v => <option key={v.id} value={v.id}>{v.firstName} {v.lastName} — {v.specialty}</option>)}
+            </select>
+            <Button onClick={assignTech} disabled={!vendorId}>ยืนยัน</Button>
           </div>
         </div>
       )}
