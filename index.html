@@ -499,15 +499,25 @@ const STOCK_OUT = [
 
 // Work orders — จัดจ้างซ่อม / บำรุงรักษา / ติดตั้งใหม่
 const WORK_ORDERS = [
-  { id: 'WO-2026-031', kind: 'repair', title: 'ซ่อมแอร์ไม่เย็น มีน้ำหยด', location: 'room', room: '203', assetKind: 'ac', assetName: 'Mitsubishi Mr.Slim 12,000 BTU', symptom: 'คอมเพรสเซอร์ทำงานแต่ไม่เย็น น้ำหยดจากตัวเครื่อง คาดว่าน้ำยารั่ว', vendor: 'ช่างแอร์ ก.เย็นสบาย', startDate: '2026-05-25', endDate: '2026-05-26', status: 'in-progress', cost: 1200, paid: false, warrantyMonths: 3, warrantyUntil: null, repairRef: 'RPR-2026-038' },
-  { id: 'WO-2026-030', kind: 'repair', title: 'เปลี่ยนก๊อกน้ำอ่างล้างหน้า', location: 'room', room: '402', assetKind: 'plumbing', assetName: 'ก๊อกน้ำอ่างล้างหน้า', symptom: 'ก๊อกรั่วซึมบริเวณข้อต่อ น้ำไหลตลอด', vendor: 'ช่างวินัย (ในหอ)', startDate: '2026-05-23', endDate: '2026-05-24', status: 'done', cost: 450, paid: true, warrantyMonths: 1, warrantyUntil: '2026-06-24', repairRef: 'RPR-2026-036' },
-  { id: 'WO-2026-029', kind: 'maintenance', title: 'ล้างแอร์ประจำปี ชั้น 3', location: 'common', room: 'ชั้น 3 (10 ห้อง)', assetKind: 'ac', assetName: 'แอร์ทั้งชั้น 10 เครื่อง', symptom: 'ล้างทำความสะอาดตามรอบบำรุงรักษาประจำปี', vendor: 'บ.คลีนแอร์ เซอร์วิส', startDate: '2026-05-15', endDate: '2026-05-16', status: 'done', cost: 3500, paid: true, warrantyMonths: 0, warrantyUntil: null, repairRef: null },
-  { id: 'WO-2026-028', kind: 'install', title: 'ติดตั้งเครื่องทำน้ำอุ่นใหม่', location: 'room', room: '305', assetKind: 'electric', assetName: 'เครื่องทำน้ำอุ่น Stiebel 3500W', symptom: 'ติดตั้งเครื่องใหม่ทดแทนเครื่องเดิมที่เสีย', vendor: 'โฮมโปร สาขาขอนแก่น', startDate: '2026-05-10', endDate: '2026-05-10', status: 'done', cost: 2890, paid: true, warrantyMonths: 24, warrantyUntil: '2028-05-10', repairRef: null },
-  { id: 'WO-2026-027', kind: 'repair', title: 'ซ่อมระบบไฟส่วนกลาง ทางเดินชั้น 1', location: 'common', room: 'ทางเดินชั้น 1', assetKind: 'electric', assetName: 'ไฟทางเดิน + เบรกเกอร์', symptom: 'ไฟกระพริบ เบรกเกอร์ตัดบ่อย', vendor: 'ช่างไฟ ส.รุ่งเรือง', startDate: '2026-05-08', endDate: '2026-05-09', status: 'done', cost: 1850, paid: true, warrantyMonths: 6, warrantyUntil: '2026-11-09', repairRef: null },
-  { id: 'WO-2026-026', kind: 'repair', title: 'ซ่อมประตูห้องน้ำ', location: 'room', room: '108', assetKind: 'other', assetName: 'บานพับ + มือจับประตู', symptom: 'บานพับหลวม ประตูปิดไม่สนิท', vendor: 'ช่างวินัย (ในหอ)', startDate: '2026-05-05', endDate: '2026-05-05', status: 'done', cost: 320, paid: true, warrantyMonths: 1, warrantyUntil: '2026-06-05', repairRef: 'RPR-2026-035' },
-  { id: 'WO-2026-025', kind: 'maintenance', title: 'ตรวจเช็กปั๊มน้ำส่วนกลาง', location: 'common', room: 'ห้องเครื่องชั้น 1', assetKind: 'plumbing', assetName: 'ปั๊มน้ำอัตโนมัติ Mitsubishi', symptom: 'บำรุงรักษาตามรอบ ตรวจแรงดันและเปลี่ยนลูกยาง', vendor: 'บ.วอเตอร์เทค', startDate: '2026-04-28', endDate: '2026-04-28', status: 'done', cost: 1500, paid: true, warrantyMonths: 3, warrantyUntil: '2026-07-28', repairRef: null },
-  { id: 'WO-2026-024', kind: 'repair', title: 'เปลี่ยนคอมเพรสเซอร์แอร์', location: 'room', room: '210', assetKind: 'ac', assetName: 'Daikin Smile 12,000 BTU', symptom: 'คอมเพรสเซอร์เสีย เปลี่ยนใหม่พร้อมเติมน้ำยา', vendor: 'ช่างแอร์ ก.เย็นสบาย', startDate: '2026-04-20', endDate: '2026-04-22', status: 'done', cost: 4200, paid: true, warrantyMonths: 12, warrantyUntil: '2027-04-22', repairRef: 'RPR-2026-034' },
-  { id: 'WO-2026-023', kind: 'repair', title: 'ซ่อมทีวีเปิดไม่ติด', location: 'room', room: '301', assetKind: 'tv', assetName: 'Samsung Smart TV 43"', symptom: 'เปิดไม่ติด ไฟ standby ติดแต่ภาพไม่ขึ้น', vendor: 'ร้านซ่อมทีวี อิเล็กโทรนิกส์', startDate: '2026-04-12', endDate: '2026-04-15', status: 'done', cost: 980, paid: true, warrantyMonths: 3, warrantyUntil: '2026-07-15', repairRef: null },
+  { id: 'WO-2026-031', kind: 'repair', title: 'ซ่อมแอร์ไม่เย็น มีน้ำหยด', location: 'room', room: '203', assetKind: 'ac', assetName: 'Mitsubishi Mr.Slim 12,000 BTU', symptom: 'คอมเพรสเซอร์ทำงานแต่ไม่เย็น น้ำหยดจากตัวเครื่อง คาดว่าน้ำยารั่ว', vendor: 'ช่างแอร์ ก.เย็นสบาย', vendorId: 'VND-01', dueDate: '2026-05-27', vendorResponse: 'accepted', vendorHistory: [], startDate: '2026-05-25', endDate: '2026-05-26', status: 'in-progress', cost: 1200, paid: false, warrantyMonths: 3, warrantyUntil: null, repairRef: 'RPR-2026-038' },
+  { id: 'WO-2026-030', kind: 'repair', title: 'เปลี่ยนก๊อกน้ำอ่างล้างหน้า', location: 'room', room: '402', assetKind: 'plumbing', assetName: 'ก๊อกน้ำอ่างล้างหน้า', symptom: 'ก๊อกรั่วซึมบริเวณข้อต่อ น้ำไหลตลอด', vendor: 'ช่างวินัย (ในหอ)', vendorId: null, dueDate: '2026-05-24', vendorResponse: 'accepted', vendorHistory: [], startDate: '2026-05-23', endDate: '2026-05-24', status: 'done', cost: 450, paid: true, warrantyMonths: 1, warrantyUntil: '2026-06-24', repairRef: 'RPR-2026-036' },
+  { id: 'WO-2026-029', kind: 'maintenance', title: 'ล้างแอร์ประจำปี ชั้น 3', location: 'common', room: 'ชั้น 3 (10 ห้อง)', assetKind: 'ac', assetName: 'แอร์ทั้งชั้น 10 เครื่อง', symptom: 'ล้างทำความสะอาดตามรอบบำรุงรักษาประจำปี', vendor: 'บ.คลีนแอร์ เซอร์วิส', vendorId: 'VND-02', dueDate: '2026-05-16', vendorResponse: 'accepted', vendorHistory: [], startDate: '2026-05-15', endDate: '2026-05-16', status: 'done', cost: 3500, paid: true, warrantyMonths: 0, warrantyUntil: null, repairRef: null },
+  { id: 'WO-2026-028', kind: 'install', title: 'ติดตั้งเครื่องทำน้ำอุ่นใหม่', location: 'room', room: '305', assetKind: 'electric', assetName: 'เครื่องทำน้ำอุ่น Stiebel 3500W', symptom: 'ติดตั้งเครื่องใหม่ทดแทนเครื่องเดิมที่เสีย', vendor: 'โฮมโปร สาขาขอนแก่น', vendorId: 'VND-03', dueDate: '2026-05-10', vendorResponse: 'accepted', vendorHistory: [], startDate: '2026-05-10', endDate: '2026-05-10', status: 'done', cost: 2890, paid: true, warrantyMonths: 24, warrantyUntil: '2028-05-10', repairRef: null },
+  { id: 'WO-2026-027', kind: 'repair', title: 'ซ่อมระบบไฟส่วนกลาง ทางเดินชั้น 1', location: 'common', room: 'ทางเดินชั้น 1', assetKind: 'electric', assetName: 'ไฟทางเดิน + เบรกเกอร์', symptom: 'ไฟกระพริบ เบรกเกอร์ตัดบ่อย', vendor: 'ช่างไฟ ส.รุ่งเรือง', vendorId: 'VND-04', dueDate: '2026-05-09', vendorResponse: 'accepted', vendorHistory: [], startDate: '2026-05-08', endDate: '2026-05-09', status: 'done', cost: 1850, paid: true, warrantyMonths: 6, warrantyUntil: '2026-11-09', repairRef: null },
+  { id: 'WO-2026-026', kind: 'repair', title: 'ซ่อมประตูห้องน้ำ', location: 'room', room: '108', assetKind: 'other', assetName: 'บานพับ + มือจับประตู', symptom: 'บานพับหลวม ประตูปิดไม่สนิท', vendor: 'ช่างวินัย (ในหอ)', vendorId: null, dueDate: '2026-05-05', vendorResponse: 'accepted', vendorHistory: [], startDate: '2026-05-05', endDate: '2026-05-05', status: 'done', cost: 320, paid: true, warrantyMonths: 1, warrantyUntil: '2026-06-05', repairRef: 'RPR-2026-035' },
+  { id: 'WO-2026-025', kind: 'maintenance', title: 'ตรวจเช็กปั๊มน้ำส่วนกลาง', location: 'common', room: 'ห้องเครื่องชั้น 1', assetKind: 'plumbing', assetName: 'ปั๊มน้ำอัตโนมัติ Mitsubishi', symptom: 'บำรุงรักษาตามรอบ ตรวจแรงดันและเปลี่ยนลูกยาง', vendor: 'บ.วอเตอร์เทค', vendorId: 'VND-05', dueDate: '2026-04-28', vendorResponse: 'accepted', vendorHistory: [], startDate: '2026-04-28', endDate: '2026-04-28', status: 'done', cost: 1500, paid: true, warrantyMonths: 3, warrantyUntil: '2026-07-28', repairRef: null },
+  { id: 'WO-2026-024', kind: 'repair', title: 'เปลี่ยนคอมเพรสเซอร์แอร์', location: 'room', room: '210', assetKind: 'ac', assetName: 'Daikin Smile 12,000 BTU', symptom: 'คอมเพรสเซอร์เสีย เปลี่ยนใหม่พร้อมเติมน้ำยา', vendor: 'ช่างแอร์ ก.เย็นสบาย', vendorId: 'VND-01', dueDate: '2026-04-22', vendorResponse: 'accepted', vendorHistory: [], startDate: '2026-04-20', endDate: '2026-04-22', status: 'done', cost: 4200, paid: true, warrantyMonths: 12, warrantyUntil: '2027-04-22', repairRef: 'RPR-2026-034' },
+  { id: 'WO-2026-023', kind: 'repair', title: 'ซ่อมทีวีเปิดไม่ติด', location: 'room', room: '301', assetKind: 'tv', assetName: 'Samsung Smart TV 43"', symptom: 'เปิดไม่ติด ไฟ standby ติดแต่ภาพไม่ขึ้น', vendor: 'ร้านซ่อมทีวี อิเล็กโทรนิกส์', vendorId: 'VND-06', dueDate: '2026-04-15', vendorResponse: 'accepted', vendorHistory: [], startDate: '2026-04-12', endDate: '2026-04-15', status: 'done', cost: 980, paid: true, warrantyMonths: 3, warrantyUntil: '2026-07-15', repairRef: null },
+];
+
+// ทะเบียนช่างซ่อม / ผู้รับเหมาภายนอก — ใช้มอบหมายงานจากใบสั่งซ่อม
+const VENDORS = [
+  { id: 'VND-01', firstName: 'กิตติ', lastName: 'เย็นสบาย', company: 'ช่างแอร์ ก.เย็นสบาย', phone: '081-234-5671', specialty: 'แอร์', bankName: 'กสิกรไทย', bankAccount: '123-4-56781-1', accountName: 'กิตติ เย็นสบาย', active: true },
+  { id: 'VND-02', firstName: 'วิไล', lastName: 'คงคล้าย', company: 'บ.คลีนแอร์ เซอร์วิส', phone: '082-345-6782', specialty: 'แอร์ (บำรุงรักษา)', bankName: 'ไทยพาณิชย์', bankAccount: '234-5-67892-2', accountName: 'บจก.คลีนแอร์ เซอร์วิส', active: true },
+  { id: 'VND-03', firstName: 'ฝ่ายติดตั้ง', lastName: 'โฮมโปร ขอนแก่น', company: 'โฮมโปร สาขาขอนแก่น', phone: '043-123-456', specialty: 'ติดตั้งเครื่องใช้ไฟฟ้า', bankName: 'กรุงไทย', bankAccount: '345-6-78903-3', accountName: 'บจก.โฮม โปรดักส์ เซ็นเตอร์', active: true },
+  { id: 'VND-04', firstName: 'สุรชัย', lastName: 'รุ่งเรือง', company: 'ช่างไฟ ส.รุ่งเรือง', phone: '083-456-7893', specialty: 'ไฟฟ้า', bankName: 'กรุงศรีอยุธยา', bankAccount: '456-7-89014-4', accountName: 'สุรชัย รุ่งเรือง', active: true },
+  { id: 'VND-05', firstName: 'ประเสริฐ', lastName: 'วอเตอร์เทค', company: 'บ.วอเตอร์เทค', phone: '084-567-8904', specialty: 'ประปา / ปั๊มน้ำ', bankName: 'กรุงเทพ', bankAccount: '567-8-90125-5', accountName: 'บจก.วอเตอร์เทค', active: true },
+  { id: 'VND-06', firstName: 'อนุชา', lastName: 'ศรีอิเล็กโทรนิกส์', company: 'ร้านซ่อมทีวี อิเล็กโทรนิกส์', phone: '085-678-9015', specialty: 'เครื่องใช้ไฟฟ้า / ทีวี', bankName: 'กสิกรไทย', bankAccount: '678-9-01236-6', accountName: 'อนุชา ศรีอิเล็กโทรนิกส์', active: true },
 ];
 
 const WO_KIND = {
@@ -522,10 +532,25 @@ const WO_STATUS = {
   done:         { th: 'เสร็จสิ้น', tone: 'green' },
 };
 
+// สถานะการตอบรับงานของช่างที่มอบหมาย — ใช้ในหน้าติดตามการซ่อม
+const WO_VENDOR_STATUS = {
+  pending:  { th: 'รอช่างตอบรับ', tone: 'amber' },
+  accepted: { th: 'ช่างตอบรับแล้ว', tone: 'blue' },
+  rejected: { th: 'ช่างปฏิเสธงาน', tone: 'red' },
+};
+
 // ผลการซ่อม — บันทึกหลังดำเนินการเสร็จ: ซ่อมได้ (ปิดงาน) หรือซ่อมไม่ได้ (พิจารณาซื้อทดแทน)
 const WO_OUTCOME = {
   fixed:        { th: 'ซ่อมสำเร็จ', tone: 'green' },
   unrepairable: { th: 'ซ่อมไม่สำเร็จ', tone: 'red' },
+};
+
+// วิธีดำเนินการทดแทน เมื่อซ่อมไม่ได้
+const WO_REPLACEMENT_METHOD = {
+  purchase: { th: 'จัดซื้อทดแทนใหม่', tone: 'blue' },
+  stock:    { th: 'ใช้อุปกรณ์จาก Stock เปลี่ยนเอง', tone: 'green' },
+  vendor:   { th: 'ให้ช่างเปลี่ยนให้ (มีค่าใช้จ่าย)', tone: 'amber' },
+  staff:    { th: 'พนักงานเปลี่ยนให้ (ไม่มีค่าใช้จ่าย)', tone: 'neutral' },
 };
 
 // Monthly maintenance spend (this year, ปี 2569)
@@ -718,7 +743,7 @@ const RPR_STATUS = {
 };
 
 Object.assign(window, {
-  TUMP_DATA: { ROOMS, TENANTS, INVOICES, REPAIRS, PROMOTIONS, ANNOUNCEMENTS, REVENUE, ASSETS, ASSET_META, ASSET_CONDITION, STOCK_ITEMS, STOCK_IN, STOCK_OUT, WORK_ORDERS, WO_KIND, WO_STATUS, WO_OUTCOME, WO_MONTHLY, EMPLOYEES, OPEX, OPEX_GROUP, OPEX_FREQ, PNL, PNL_INCOME_LABELS, PNL_EXPENSE_LABELS, UTILITY_RATE, METER_READINGS, SHOP_ITEMS, SHOP_IN, SHOP_OUT, SHOP_CAT_TONE, STATUS_META, INV_STATUS, RPR_STATUS },
+  TUMP_DATA: { ROOMS, TENANTS, INVOICES, REPAIRS, PROMOTIONS, ANNOUNCEMENTS, REVENUE, ASSETS, ASSET_META, ASSET_CONDITION, STOCK_ITEMS, STOCK_IN, STOCK_OUT, WORK_ORDERS, VENDORS, WO_KIND, WO_STATUS, WO_VENDOR_STATUS, WO_OUTCOME, WO_REPLACEMENT_METHOD, WO_MONTHLY, EMPLOYEES, OPEX, OPEX_GROUP, OPEX_FREQ, PNL, PNL_INCOME_LABELS, PNL_EXPENSE_LABELS, UTILITY_RATE, METER_READINGS, SHOP_ITEMS, SHOP_IN, SHOP_OUT, SHOP_CAT_TONE, STATUS_META, INV_STATUS, RPR_STATUS },
 });
 })();
 
@@ -6231,15 +6256,30 @@ Object.assign(window, {
 // Issue orders, pay + warranty, monthly/yearly expense report, history by room/asset.
 
 function AdminWorkOrders({ goto }) {
-  const { WORK_ORDERS, WO_KIND, WO_STATUS, WO_MONTHLY } = window.TUMP_DATA;
+  const { WORK_ORDERS, VENDORS, WO_KIND, WO_STATUS, WO_MONTHLY } = window.TUMP_DATA;
   const [tab, setTab] = React.useState('orders');
   const [selected, setSelected] = React.useState(null);
   const [creating, setCreating] = React.useState(false);
+  const [editingVendor, setEditingVendor] = React.useState(null);
+  const [addingVendor, setAddingVendor] = React.useState(false);
 
   const totalYear = WORK_ORDERS.reduce((s, w) => s + w.cost, 0);
   const thisMonth = WORK_ORDERS.filter(w => w.startDate.startsWith('2026-05')).reduce((s, w) => s + w.cost, 0);
   const unpaid = WORK_ORDERS.filter(w => !w.paid);
   const underWarranty = WORK_ORDERS.filter(w => w.warrantyUntil && new Date(w.warrantyUntil) > new Date('2026-05-26'));
+  const tracking = WORK_ORDERS.filter(w => w.status !== 'done');
+
+  const saveVendor = (data, id) => {
+    if (id) {
+      const v = VENDORS.find(x => x.id === id);
+      Object.assign(v, data);
+    } else {
+      const nextId = 'VND-' + String(VENDORS.length + 1).padStart(2, '0');
+      VENDORS.push({ id: nextId, ...data });
+    }
+    setEditingVendor(null);
+    setAddingVendor(false);
+  };
 
   return (
     <div className="tu-page">
@@ -6261,17 +6301,22 @@ function AdminWorkOrders({ goto }) {
         <div style={{ padding: 16, borderBottom: '1px solid var(--border)' }}>
           <Tabs value={tab} onChange={setTab} options={[
             { value: 'orders', label: 'ใบสั่งซ่อม', count: WORK_ORDERS.length },
+            { value: 'tracking', label: 'ติดตามงาน', count: tracking.length },
+            { value: 'vendors', label: 'ทะเบียนช่าง', count: VENDORS.length },
             { value: 'report', label: 'รายงานรายจ่าย' },
             { value: 'history', label: 'ประวัติรายห้อง / สินทรัพย์' },
           ]} />
         </div>
         {tab === 'orders' && <WorkOrderTable orders={WORK_ORDERS} onSelect={setSelected} />}
+        {tab === 'tracking' && <WorkOrderTracking orders={tracking} vendors={VENDORS} onSelect={setSelected} />}
+        {tab === 'vendors' && <WorkOrderVendors vendors={VENDORS} onAdd={() => setAddingVendor(true)} onEdit={setEditingVendor} />}
         {tab === 'report' && <WorkOrderReport orders={WORK_ORDERS} monthly={WO_MONTHLY} />}
         {tab === 'history' && <WorkOrderHistory orders={WORK_ORDERS} onSelect={setSelected} />}
       </Card>
 
-      <WorkOrderModal order={selected} onClose={() => setSelected(null)} goto={goto} />
+      <WorkOrderModal order={selected} onClose={() => setSelected(null)} goto={goto} vendors={VENDORS} />
       <WorkOrderCreate open={creating} onClose={() => setCreating(false)} />
+      <VendorModal vendor={editingVendor} open={!!editingVendor || addingVendor} onClose={() => { setEditingVendor(null); setAddingVendor(false); }} onSave={saveVendor} />
     </div>
   );
 }
@@ -6305,6 +6350,119 @@ function WorkOrderTable({ orders, onSelect }) {
         ))}
       </tbody>
     </table>
+  );
+}
+
+// หน้าจอติดตามการซ่อม — งานที่ยังไม่ปิด: ใครรับผิดชอบ, ตอบรับหรือยัง, เลยกำหนดไหม
+function WorkOrderTracking({ orders, vendors, onSelect }) {
+  const { WO_VENDOR_STATUS } = window.TUMP_DATA;
+  const now = new Date('2026-05-26');
+  const vendorName = (id) => {
+    const v = vendors.find(x => x.id === id);
+    return v ? `${v.firstName} ${v.lastName}` : null;
+  };
+  if (orders.length === 0) {
+    return <div style={{ padding: 32, textAlign: 'center' }} className="tu-muted">ไม่มีงานที่กำลังติดตามอยู่ในขณะนี้</div>;
+  }
+  return (
+    <table className="tu-table">
+      <thead>
+        <tr><th>เลขที่</th><th>รายการ</th><th>ช่างที่มอบหมาย</th><th>สถานะตอบรับ</th><th>กำหนดส่งงาน</th><th>หมายเหตุ</th></tr>
+      </thead>
+      <tbody>
+        {orders.map(w => {
+          const overdue = w.dueDate && new Date(w.dueDate) < now && w.status !== 'done';
+          const vname = vendorName(w.vendorId);
+          return (
+            <tr key={w.id} className="tu-row-hover" onClick={() => onSelect(w)}>
+              <td style={{ fontFamily: 'ui-monospace,monospace', fontSize: 11.5 }}>{w.id}</td>
+              <td style={{ maxWidth: 240 }}>
+                <div style={{ fontWeight: 500 }}>{w.title}</div>
+                <div className="tu-muted" style={{ fontSize: 11.5 }}>{w.location === 'common' ? 'ส่วนกลาง' : `ห้อง ${w.room}`}</div>
+              </td>
+              <td style={{ fontSize: 12.5 }}>{vname || w.vendor}</td>
+              <td>{w.vendorResponse ? <Badge tone={WO_VENDOR_STATUS[w.vendorResponse].tone} dot>{WO_VENDOR_STATUS[w.vendorResponse].th}</Badge> : <Badge tone="neutral">ยังไม่มอบหมาย</Badge>}</td>
+              <td className="tu-muted" style={{ fontSize: 12 }}>{w.dueDate ? formatDate(w.dueDate) : '—'}</td>
+              <td>
+                {overdue && <Badge tone="red" dot>เลยกำหนด</Badge>}
+                {!overdue && w.vendorResponse === 'rejected' && <Badge tone="red" dot>ต้องเปลี่ยนช่าง</Badge>}
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+// ทะเบียนช่างซ่อม / ผู้รับเหมา — เบอร์ติดต่อ ความเชี่ยวชาญ และบัญชีสำหรับโอนเงิน
+function WorkOrderVendors({ vendors, onAdd, onEdit }) {
+  return (
+    <div>
+      <div style={{ padding: '12px 16px', display: 'flex', justifyContent: 'flex-end' }}>
+        <Button size="sm" icon={I.plus} onClick={onAdd}>เพิ่มช่าง</Button>
+      </div>
+      <table className="tu-table">
+        <thead>
+          <tr><th>ชื่อ-นามสกุล</th><th>บริษัท / ร้าน</th><th>เบอร์ติดต่อ</th><th>ความเชี่ยวชาญ</th><th>บัญชีรับโอนเงิน</th><th>สถานะ</th></tr>
+        </thead>
+        <tbody>
+          {vendors.map(v => (
+            <tr key={v.id} className="tu-row-hover" onClick={() => onEdit(v)}>
+              <td style={{ fontWeight: 500 }}>{v.firstName} {v.lastName}</td>
+              <td className="tu-muted" style={{ fontSize: 12.5 }}>{v.company}</td>
+              <td className="tu-muted" style={{ fontSize: 12.5 }}>{v.phone}</td>
+              <td className="tu-muted" style={{ fontSize: 12.5 }}>{v.specialty}</td>
+              <td style={{ fontSize: 12 }}>
+                <div>{v.bankName} {v.bankAccount}</div>
+                <div className="tu-muted">{v.accountName}</div>
+              </td>
+              <td>{v.active ? <Badge tone="green" dot>ใช้งานอยู่</Badge> : <Badge tone="neutral">ปิดใช้งาน</Badge>}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function VendorModal({ vendor, open, onClose, onSave }) {
+  const blank = { firstName: '', lastName: '', company: '', phone: '', specialty: '', bankName: '', bankAccount: '', accountName: '', active: true };
+  const [form, setForm] = React.useState(blank);
+  const upd = (k, v) => setForm(p => ({ ...p, [k]: v }));
+
+  React.useEffect(() => {
+    setForm(vendor ? { ...vendor } : blank);
+  }, [vendor, open]);
+
+  return (
+    <Modal open={open} onClose={onClose} title={vendor ? 'แก้ไขข้อมูลช่าง' : 'เพิ่มช่างใหม่'} width={520}
+      footer={<>
+        <Button variant="secondary" onClick={onClose}>ยกเลิก</Button>
+        <Button icon={I.check} onClick={() => onSave(form, vendor?.id)} disabled={!form.firstName.trim() || !form.phone.trim()}>บันทึก</Button>
+      </>}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <Input label="ชื่อ" value={form.firstName} onChange={v => upd('firstName', v)} />
+          <Input label="นามสกุล" value={form.lastName} onChange={v => upd('lastName', v)} />
+        </div>
+        <Input label="บริษัท / ร้าน" value={form.company} onChange={v => upd('company', v)} />
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <Input label="เบอร์ติดต่อ" value={form.phone} onChange={v => upd('phone', v)} />
+          <Input label="ความเชี่ยวชาญ" value={form.specialty} onChange={v => upd('specialty', v)} placeholder="เช่น แอร์, ไฟฟ้า, ประปา" />
+        </div>
+        <div className="tu-muted" style={{ fontSize: 12, marginTop: 4 }}>บัญชีสำหรับโอนเงินค่าดำเนินการ</div>
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+          <Input label="ธนาคาร" value={form.bankName} onChange={v => upd('bankName', v)} />
+          <Input label="เลขที่บัญชี" value={form.bankAccount} onChange={v => upd('bankAccount', v)} />
+        </div>
+        <Input label="ชื่อบัญชี" value={form.accountName} onChange={v => upd('accountName', v)} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <input type="checkbox" id="vendor-active" checked={form.active} onChange={e => upd('active', e.target.checked)} />
+          <label htmlFor="vendor-active" style={{ fontSize: 13 }}>ใช้งานอยู่ (พร้อมรับงาน)</label>
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -6448,18 +6606,34 @@ function WorkOrderHistory({ orders, onSelect }) {
   );
 }
 
-function WorkOrderModal({ order, onClose, goto }) {
-  const { WO_KIND, WO_STATUS, WO_OUTCOME } = window.TUMP_DATA;
+function WorkOrderModal({ order, onClose, goto, vendors = [] }) {
+  const { WO_KIND, WO_STATUS, WO_OUTCOME, WO_VENDOR_STATUS } = window.TUMP_DATA;
+  const now = new Date('2026-05-26');
   const [paid, setPaid] = React.useState(false);
   const [status, setStatus] = React.useState(null);
   const [outcome, setOutcome] = React.useState(null);
+  const [vendorId, setVendorId] = React.useState(null);
+  const [vendorResponse, setVendorResponse] = React.useState(null);
+  const [dueDate, setDueDate] = React.useState(null);
+  const [showReassign, setShowReassign] = React.useState(false);
+  const [newVendorId, setNewVendorId] = React.useState('');
+  const [newDueDate, setNewDueDate] = React.useState('');
+
   React.useEffect(() => {
     setPaid(order?.paid || false);
     setStatus(order?.status || null);
     setOutcome(order?.outcome || null);
+    setVendorId(order?.vendorId || null);
+    setVendorResponse(order?.vendorResponse || null);
+    setDueDate(order?.dueDate || null);
+    setShowReassign(false);
+    setNewVendorId('');
+    setNewDueDate('');
   }, [order]);
   if (!order) return null;
   const inWarranty = order.warrantyUntil && new Date(order.warrantyUntil) > new Date('2026-05-26');
+  const overdue = !!dueDate && new Date(dueDate) < now && status !== 'done';
+  const assignedVendor = vendors.find(v => v.id === vendorId);
 
   const closeWorkOrder = (result) => {
     order.status = 'done';
@@ -6471,6 +6645,27 @@ function WorkOrderModal({ order, onClose, goto }) {
   const goReplaceAsset = () => {
     onClose();
     if (goto) goto('assets');
+  };
+
+  const recordVendorResponse = (resp) => {
+    order.vendorResponse = resp;
+    setVendorResponse(resp);
+  };
+
+  const reassignVendor = () => {
+    if (!newVendorId) return;
+    order.vendorHistory = order.vendorHistory || [];
+    order.vendorHistory.push({
+      vendorId: order.vendorId, dueDate: order.dueDate, response: order.vendorResponse,
+      reason: order.vendorResponse === 'rejected' ? 'ปฏิเสธงาน' : overdue ? 'เลยกำหนดส่งงาน' : 'เปลี่ยนช่างโดย admin',
+    });
+    order.vendorId = newVendorId;
+    order.dueDate = newDueDate || order.dueDate;
+    order.vendorResponse = 'pending';
+    setVendorId(order.vendorId);
+    setDueDate(order.dueDate);
+    setVendorResponse('pending');
+    setShowReassign(false);
   };
 
   return (
@@ -6495,8 +6690,51 @@ function WorkOrderModal({ order, onClose, goto }) {
         <div style={{ fontSize: 13.5, marginTop: 4 }}>{order.symptom}</div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14, marginBottom: 16 }}>
-        <KV label="ผู้รับเหมา / ช่าง" value={order.vendor} />
+      {/* การมอบหมายช่าง — เลือกจากทะเบียนช่าง ติดตามการตอบรับ และเปลี่ยนช่างเมื่อเลยกำหนด/ถูกปฏิเสธ */}
+      <div style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 16, marginBottom: 16 }}>
+        <SectionTitle>การมอบหมายช่าง</SectionTitle>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginTop: 8, flexWrap: 'wrap', gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 600 }}>{assignedVendor ? `${assignedVendor.firstName} ${assignedVendor.lastName}` : order.vendor}</div>
+            {assignedVendor && <div className="tu-muted" style={{ fontSize: 12.5 }}>{assignedVendor.company} • {assignedVendor.phone}</div>}
+            <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+              {vendorResponse && <Badge tone={WO_VENDOR_STATUS[vendorResponse].tone} dot>{WO_VENDOR_STATUS[vendorResponse].th}</Badge>}
+              {overdue && <Badge tone="red" dot>เลยกำหนดส่งงาน {formatDate(dueDate)}</Badge>}
+              {!overdue && dueDate && <span className="tu-muted" style={{ fontSize: 12 }}>กำหนดส่งงาน {formatDate(dueDate)}</span>}
+            </div>
+          </div>
+          {status !== 'done' && vendorResponse === 'pending' && (
+            <div style={{ display: 'flex', gap: 8 }}>
+              <Button size="sm" icon={I.check} onClick={() => recordVendorResponse('accepted')}>ช่างตอบรับงาน</Button>
+              <Button size="sm" variant="secondary" onClick={() => recordVendorResponse('rejected')}>ช่างปฏิเสธงาน</Button>
+            </div>
+          )}
+          {status !== 'done' && vendorResponse === 'accepted' && !overdue && !showReassign && (
+            <button onClick={() => setShowReassign(true)} className="tu-link" style={{ fontSize: 12 }}>เปลี่ยนช่าง</button>
+          )}
+        </div>
+
+        {status !== 'done' && (vendorResponse === 'rejected' || overdue || showReassign) && (
+          <div style={{ marginTop: 14, paddingTop: 14, borderTop: '1px solid var(--border)' }}>
+            <div style={{ fontSize: 12.5, fontWeight: 600, color: '#9a6b00', marginBottom: 8 }}>
+              {vendorResponse === 'rejected' ? 'ช่างปฏิเสธงานนี้ — กรุณาเปลี่ยนช่าง' : overdue ? 'เลยกำหนดส่งงาน — พิจารณาเปลี่ยนช่าง' : 'เปลี่ยนช่างที่รับผิดชอบ'}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr auto', gap: 10, alignItems: 'end' }}>
+              <div>
+                <div style={{ fontSize: 12.5, fontWeight: 500, marginBottom: 6, color: 'var(--muted)' }}>ช่างคนใหม่</div>
+                <select className="tu-select" style={{ width: '100%' }} value={newVendorId} onChange={e => setNewVendorId(e.target.value)}>
+                  <option value="">เลือกช่าง...</option>
+                  {vendors.map(v => <option key={v.id} value={v.id}>{v.firstName} {v.lastName} ({v.company})</option>)}
+                </select>
+              </div>
+              <Input label="กำหนดส่งงานใหม่" type="date" value={newDueDate} onChange={setNewDueDate} />
+              <Button size="sm" onClick={reassignVendor} disabled={!newVendorId}>มอบหมายช่างใหม่</Button>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14, marginBottom: 16 }}>
         <KV label="งานซ่อมที่อ้างอิง" value={order.repairRef || '—'} />
         <KV label="วันเริ่มดำเนินการ" value={formatDate(order.startDate)} />
         <KV label="วันสิ้นสุด" value={formatDate(order.endDate)} />
@@ -6528,7 +6766,7 @@ function WorkOrderModal({ order, onClose, goto }) {
 
       {/* ผลการซ่อม — บันทึกหลังดำเนินการ */}
       {status === 'in-progress' && (
-        <div style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 16 }}>
+        <div style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 16, marginBottom: 16 }}>
           <SectionTitle>ผลการซ่อม</SectionTitle>
           <div className="tu-muted" style={{ fontSize: 12.5, marginTop: 2, marginBottom: 12 }}>
             หลังดำเนินการซ่อมเสร็จแล้ว ให้บันทึกผลลัพธ์เพื่อปิดงานซ่อม
@@ -6541,15 +6779,121 @@ function WorkOrderModal({ order, onClose, goto }) {
       )}
 
       {status === 'done' && outcome === 'unrepairable' && (
-        <div style={{ background: '#fcebec', border: '1px solid #f3c6c9', borderRadius: 12, padding: 16 }}>
-          <div style={{ fontSize: 13.5, fontWeight: 600, color: '#9b1c1c', marginBottom: 4 }}>ซ่อมไม่สำเร็จ</div>
-          <div style={{ fontSize: 13, color: '#9b1c1c', marginBottom: 12 }}>
-            มีค่าใช้จ่ายเกิดขึ้นแล้ว ฿{order.cost.toLocaleString()} แต่ทรัพย์สินนี้ซ่อมไม่ได้ แนะนำให้พิจารณาซื้อทดแทน
-          </div>
-          <Button size="sm" onClick={goReplaceAsset}>ไปหน้าทรัพย์สิน เพื่อเพิ่มรายการทดแทน</Button>
-        </div>
+        <ReplacementDecision order={order} vendors={vendors} goReplaceAsset={goReplaceAsset} />
       )}
     </Modal>
+  );
+}
+
+// บันทึกวิธีดำเนินการทดแทน เมื่อซ่อมไม่ได้: ซื้อใหม่ / ใช้ stock เปลี่ยนเอง / ให้ช่างเปลี่ยน (มีค่าใช้จ่าย) / พนักงานเปลี่ยนให้ (ไม่มีค่าใช้จ่าย เพื่อคำนวณ bonus)
+function ReplacementDecision({ order, vendors, goReplaceAsset }) {
+  const { STOCK_ITEMS, EMPLOYEES, WO_REPLACEMENT_METHOD } = window.TUMP_DATA;
+  const [saved, setSaved] = React.useState(!!order.replacement);
+  const [method, setMethod] = React.useState('purchase');
+  const [stockSku, setStockSku] = React.useState(STOCK_ITEMS[0]?.sku || '');
+  const [stockQty, setStockQty] = React.useState('1');
+  const [performedBy, setPerformedBy] = React.useState(EMPLOYEES[0]?.id || '');
+  const [vendorId, setVendorId] = React.useState(vendors[0]?.id || '');
+  const [cost, setCost] = React.useState('');
+  const [note, setNote] = React.useState('');
+
+  if (saved && order.replacement) {
+    const r = order.replacement;
+    const emp = r.employeeId ? EMPLOYEES.find(e => e.id === r.employeeId) : null;
+    const v = r.vendorId ? vendors.find(x => x.id === r.vendorId) : null;
+    return (
+      <div style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 16 }}>
+        <SectionTitle>การดำเนินการทดแทน</SectionTitle>
+        <div style={{ marginTop: 8 }}><Badge tone={WO_REPLACEMENT_METHOD[r.method].tone} dot>{WO_REPLACEMENT_METHOD[r.method].th}</Badge></div>
+        <div style={{ fontSize: 13, marginTop: 10, lineHeight: 1.6 }}>
+          {r.method === 'stock' && <>ใช้ <strong>{r.stockName}</strong> จำนวน {r.stockQty} {r.stockUnit} จาก Stock • ผู้ดำเนินการเปลี่ยน: {emp?.name}</>}
+          {r.method === 'vendor' && <>ให้ {v ? `${v.firstName} ${v.lastName} (${v.company})` : '—'} เป็นผู้เปลี่ยน • ค่าใช้จ่าย ฿{(r.cost || 0).toLocaleString()}</>}
+          {r.method === 'staff' && <>{emp?.name} ({emp?.role}) เป็นผู้ดำเนินการเปลี่ยน — ไม่มีค่าใช้จ่าย บันทึกไว้สำหรับคำนวณ bonus{r.note ? ` • ${r.note}` : ''}</>}
+          {r.method === 'purchase' && (r.note || 'รอดำเนินการจัดซื้ออุปกรณ์ทดแทนใหม่')}
+        </div>
+      </div>
+    );
+  }
+
+  const submit = () => {
+    let payload = { method, note, recordedAt: '2026-05-26' };
+    if (method === 'stock') {
+      const item = STOCK_ITEMS.find(s => s.sku === stockSku);
+      if (item) item.qty = Math.max(0, item.qty - Number(stockQty || 0));
+      payload = { ...payload, stockSku, stockName: item?.name, stockUnit: item?.unit, stockQty: Number(stockQty || 0), employeeId: performedBy, cost: 0 };
+    } else if (method === 'vendor') {
+      payload = { ...payload, vendorId, cost: Number(cost || 0) };
+    } else if (method === 'staff') {
+      payload = { ...payload, employeeId: performedBy, cost: 0 };
+    } else {
+      payload = { ...payload, cost: 0 };
+    }
+    order.replacement = payload;
+    setSaved(true);
+  };
+
+  return (
+    <div style={{ border: '1px solid var(--border)', borderRadius: 12, padding: 16 }}>
+      <SectionTitle>การดำเนินการทดแทน</SectionTitle>
+      <div className="tu-muted" style={{ fontSize: 12.5, marginTop: 2, marginBottom: 12 }}>ทรัพย์สินนี้ซ่อมไม่ได้ — เลือกวิธีดำเนินการทดแทน</div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 14 }}>
+        {Object.entries(WO_REPLACEMENT_METHOD).map(([k, m]) => (
+          <label key={k} style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, cursor: 'pointer' }}>
+            <input type="radio" name={`repl-method-${order.id}`} checked={method === k} onChange={() => setMethod(k)} />
+            {m.th}
+          </label>
+        ))}
+      </div>
+
+      {method === 'purchase' && (
+        <>
+          <Input label="หมายเหตุ (ไม่บังคับ)" value={note} onChange={setNote} placeholder="เช่น รออนุมัติงบจัดซื้อ" />
+          <div style={{ marginTop: 10 }}><Button variant="secondary" size="sm" onClick={goReplaceAsset}>ไปหน้าทรัพย์สิน เพื่อเพิ่มรายการทดแทน</Button></div>
+        </>
+      )}
+      {method === 'stock' && (
+        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 6, color: 'var(--muted)' }}>อุปกรณ์ใน Stock</div>
+            <select className="tu-select" style={{ width: '100%' }} value={stockSku} onChange={e => setStockSku(e.target.value)}>
+              {STOCK_ITEMS.map(s => <option key={s.sku} value={s.sku}>{s.name} (เหลือ {s.qty} {s.unit})</option>)}
+            </select>
+          </div>
+          <Input label="จำนวน" type="number" value={stockQty} onChange={setStockQty} />
+          <div style={{ gridColumn: '1 / -1' }}>
+            <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 6, color: 'var(--muted)' }}>ผู้ดำเนินการเปลี่ยน</div>
+            <select className="tu-select" style={{ width: '100%' }} value={performedBy} onChange={e => setPerformedBy(e.target.value)}>
+              {EMPLOYEES.map(e => <option key={e.id} value={e.id}>{e.name} ({e.role})</option>)}
+            </select>
+          </div>
+        </div>
+      )}
+      {method === 'vendor' && (
+        <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr', gap: 12 }}>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 6, color: 'var(--muted)' }}>ช่างที่จะให้เปลี่ยน</div>
+            <select className="tu-select" style={{ width: '100%' }} value={vendorId} onChange={e => setVendorId(e.target.value)}>
+              {vendors.map(v => <option key={v.id} value={v.id}>{v.firstName} {v.lastName} ({v.company})</option>)}
+            </select>
+          </div>
+          <Input label="ค่าใช้จ่าย (฿)" type="number" value={cost} onChange={setCost} />
+        </div>
+      )}
+      {method === 'staff' && (
+        <>
+          <div style={{ fontSize: 13, fontWeight: 500, marginBottom: 6, color: 'var(--muted)' }}>พนักงานผู้ดำเนินการเปลี่ยน (ไม่มีค่าใช้จ่าย)</div>
+          <select className="tu-select" style={{ width: '100%', marginBottom: 10 }} value={performedBy} onChange={e => setPerformedBy(e.target.value)}>
+            {EMPLOYEES.map(e => <option key={e.id} value={e.id}>{e.name} ({e.role})</option>)}
+          </select>
+          <Input label="หมายเหตุ (ไม่บังคับ)" value={note} onChange={setNote} placeholder="บันทึกไว้สำหรับคำนวณ bonus" />
+        </>
+      )}
+
+      <div style={{ marginTop: 14 }}>
+        <Button icon={I.check} onClick={submit}>บันทึกการดำเนินการ</Button>
+      </div>
+    </div>
   );
 }
 
