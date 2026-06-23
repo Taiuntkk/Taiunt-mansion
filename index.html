@@ -5313,7 +5313,7 @@ function AdminRepairs({ goto }) {
               <tr key={r.id} className="tu-row-hover" onClick={() => setSelected(r)}>
                 <td style={{ fontFamily: 'ui-monospace,monospace', fontSize: 11.5 }}>{r.id}</td>
                 <td>
-                  <div style={{ fontWeight: 500 }}>{r.room}</div>
+                  <div style={{ fontWeight: 500 }}>{r.location === 'common' ? r.room : `ห้อง ${r.room}`}</div>
                   <div className="tu-muted" style={{ fontSize: 11.5 }}>{r.tenant}</div>
                 </td>
                 <td>{r.category}</td>
@@ -5337,7 +5337,7 @@ const REPAIR_CATEGORIES = ['แอร์', 'ไฟฟ้า', 'ประปา',
 
 function RepairCreateModal({ open, onClose }) {
   const { EMPLOYEES } = window.TUMP_DATA;
-  const blank = { reporter: 'tenant', room: ROOMS[0].id, staffId: EMPLOYEES[0]?.id || '', category: REPAIR_CATEGORIES[0], issue: '', priority: 'medium' };
+  const blank = { reporter: 'tenant', location: 'room', room: ROOMS[0].id, staffId: EMPLOYEES[0]?.id || '', category: REPAIR_CATEGORIES[0], issue: '', priority: 'medium' };
   const [form, setForm] = React.useState(blank);
   const [done, setDone] = React.useState(false);
   const upd = (k, v) => setForm(p => ({ ...p, [k]: v }));
@@ -5346,13 +5346,13 @@ function RepairCreateModal({ open, onClose }) {
   if (!open) return null;
 
   const submit = () => {
-    if (!form.issue.trim()) return;
-    const room = ROOMS.find(r => r.id === form.room);
+    if (!form.issue.trim() || (form.location === 'common' && !form.room.trim())) return;
+    const room = form.location === 'room' ? ROOMS.find(r => r.id === form.room) : null;
     const staff = EMPLOYEES.find(e => e.id === form.staffId);
     const nextNum = Math.max(...REPAIRS.map(r => Number(r.id.split('-')[2]))) + 1;
     REPAIRS.unshift({
       id: `RPR-2026-${String(nextNum).padStart(3, '0')}`,
-      room: form.room,
+      location: form.location, room: form.room,
       tenant: form.reporter === 'staff' ? `${staff?.name || 'เจ้าหน้าที่'} (เจ้าหน้าที่หอพัก)` : (room?.tenant || '—'),
       type: form.reporter === 'staff' ? 'staff' : (room?.type || 'monthly'),
       category: form.category, issue: form.issue.trim(),
@@ -5367,7 +5367,7 @@ function RepairCreateModal({ open, onClose }) {
         <div style={{ textAlign: 'center', padding: '20px 0' }}>
           <div style={{ width: 56, height: 56, borderRadius: '50%', background: 'var(--primary-soft)', color: 'var(--primary)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginBottom: 14 }}>{I.check}</div>
           <div style={{ fontSize: 15, fontWeight: 600 }}>บันทึกงานซ่อมเรียบร้อย</div>
-          <div className="tu-muted" style={{ fontSize: 13, marginTop: 6 }}>ห้อง {form.room} • {form.category}</div>
+          <div className="tu-muted" style={{ fontSize: 13, marginTop: 6 }}>{form.location === 'common' ? form.room : `ห้อง ${form.room}`} • {form.category}</div>
         </div>
       </Modal>
     );
@@ -5377,7 +5377,7 @@ function RepairCreateModal({ open, onClose }) {
     <Modal open={open} onClose={onClose} title="เพิ่มงานซ่อม" width={480}
       footer={<>
         <Button variant="secondary" onClick={onClose}>ยกเลิก</Button>
-        <Button icon={I.check} onClick={submit} disabled={!form.issue.trim()}>บันทึก</Button>
+        <Button icon={I.check} onClick={submit} disabled={!form.issue.trim() || (form.location === 'common' && !form.room.trim())}>บันทึก</Button>
       </>}>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
         <div>
@@ -5401,12 +5401,25 @@ function RepairCreateModal({ open, onClose }) {
             </select>
           </label>
         )}
-        <label style={{ display: 'block' }}>
-          <div style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--muted)', marginBottom: 6 }}>ห้อง / บริเวณที่พบปัญหา</div>
-          <select className="tu-select" value={form.room} onChange={(e) => upd('room', e.target.value)} style={{ width: '100%' }}>
-            {ROOMS.map(r => <option key={r.id} value={r.id}>ห้อง {r.id}{r.tenant ? ` — ${r.tenant}` : ''}</option>)}
-          </select>
-        </label>
+        <div>
+          <div style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--muted)', marginBottom: 8 }}>บริเวณที่พบปัญหา</div>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+            {[{ v: 'room', t: 'ในห้องพัก' }, { v: 'common', t: 'ส่วนกลาง' }].map(o => (
+              <button key={o.v} onClick={() => setForm(p => ({ ...p, location: o.v, room: o.v === 'room' ? ROOMS[0].id : '' }))} style={{
+                flex: 1, padding: '8px 10px', borderRadius: 8, fontFamily: 'inherit', fontSize: 12.5, fontWeight: 500,
+                border: form.location === o.v ? '2px solid var(--primary)' : '1px solid var(--border)',
+                background: form.location === o.v ? 'var(--primary-soft)' : 'var(--surface)', cursor: 'pointer',
+              }}>{o.t}</button>
+            ))}
+          </div>
+          {form.location === 'room' ? (
+            <select className="tu-select" value={form.room} onChange={(e) => upd('room', e.target.value)} style={{ width: '100%' }}>
+              {ROOMS.map(r => <option key={r.id} value={r.id}>ห้อง {r.id}{r.tenant ? ` — ${r.tenant}` : ''}</option>)}
+            </select>
+          ) : (
+            <Input value={form.room} onChange={(v) => upd('room', v)} placeholder="เช่น บริเวณด้านหลังหอพัก มีน้ำขัง" />
+          )}
+        </div>
         <label style={{ display: 'block' }}>
           <div style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--muted)', marginBottom: 6 }}>หมวด</div>
           <select className="tu-select" value={form.category} onChange={(e) => upd('category', e.target.value)} style={{ width: '100%' }}>
@@ -5477,8 +5490,8 @@ function RepairModal({ repair, onClose, goto }) {
     const nextNum = Math.max(...WORK_ORDERS.map(w => Number(w.id.split('-')[2]))) + 1;
     WORK_ORDERS.unshift({
       id: `WO-2026-${String(nextNum).padStart(3, '0')}`,
-      kind: 'repair', title: `ซ่อม${repair.category} ห้อง ${repair.room}`,
-      location: 'room', room: repair.room, assetKind: REPAIR_CATEGORY_ASSET_KIND[repair.category] || 'other', assetName: repair.category,
+      kind: 'repair', title: `ซ่อม${repair.category} ${repair.location === 'common' ? repair.room : `ห้อง ${repair.room}`}`,
+      location: repair.location || 'room', room: repair.room, assetKind: REPAIR_CATEGORY_ASSET_KIND[repair.category] || 'other', assetName: repair.category,
       symptom: repair.issue, vendor: `${vendor.firstName} ${vendor.lastName}`, vendorId: vendor.id,
       dueDate: null, vendorResponse: 'accepted', vendorHistory: [],
       startDate: '2026-05-26', endDate: null, status: 'in-progress',
@@ -5499,8 +5512,8 @@ function RepairModal({ repair, onClose, goto }) {
     const nextNum = Math.max(...WORK_ORDERS.map(w => Number(w.id.split('-')[2]))) + 1;
     WORK_ORDERS.unshift({
       id: `WO-2026-${String(nextNum).padStart(3, '0')}`,
-      kind: 'install', title: `ซื้ออุปกรณ์ทดแทน${repair.category} ห้อง ${repair.room}`,
-      location: 'room', room: repair.room, assetKind: REPAIR_CATEGORY_ASSET_KIND[repair.category] || 'other', assetName: repair.category,
+      kind: 'install', title: `ซื้ออุปกรณ์ทดแทน${repair.category} ${repair.location === 'common' ? repair.room : `ห้อง ${repair.room}`}`,
+      location: repair.location || 'room', room: repair.room, assetKind: REPAIR_CATEGORY_ASSET_KIND[repair.category] || 'other', assetName: repair.category,
       symptom: repair.issue, vendor: supplier, vendorId: null,
       dueDate: null, vendorResponse: 'accepted', vendorHistory: [],
       startDate: '2026-05-26', endDate: null, status: 'in-progress',
@@ -5548,7 +5561,7 @@ function RepairModal({ repair, onClose, goto }) {
         <Badge tone={{ high: 'red', medium: 'amber', low: 'neutral' }[repair.priority]}>ความเร่งด่วน: {{ high: 'สูง', medium: 'ปานกลาง', low: 'ต่ำ' }[repair.priority]}</Badge>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
-        <KV label="ห้อง" value={repair.room} />
+        <KV label={repair.location === 'common' ? 'บริเวณ' : 'ห้อง'} value={repair.room} />
         <KV label="ผู้แจ้ง" value={repair.tenant} />
         <KV label="หมวด" value={repair.category} />
         <KV label="วันที่แจ้ง" value={repair.date} />

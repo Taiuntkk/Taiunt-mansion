@@ -132,10 +132,12 @@ create table cash_transactions (
   created_at      timestamptz not null default now()
 );
 
--- ── Repairs (tenant-reported issues) ────────────────────────────────────────
+-- ── Repairs (tenant- or staff-reported issues) ──────────────────────────────
 create table repairs (
   id            text primary key,          -- e.g. 'RPR-2026-038'
-  room_id       text not null references rooms(id),
+  location      wo_location not null default 'room',
+  room_id       text references rooms(id),   -- null when location = 'common'
+  common_area   text,                         -- free-text label when location = 'common'
   tenant_id     text references tenants(id),
   type          room_type not null,
   category      text not null,             -- แอร์ / ไฟฟ้า / ประปา / อินเตอร์เน็ต / อื่นๆ
@@ -144,7 +146,11 @@ create table repairs (
   status        repair_status not null default 'pending',
   priority      repair_priority not null default 'medium',
   assignee      text,
-  completed_at  timestamptz
+  completed_at  timestamptz,
+  constraint repairs_location_check check (
+    (location = 'room' and room_id is not null and common_area is null) or
+    (location = 'common' and room_id is null and common_area is not null)
+  )
 );
 
 -- ── Promotions & announcements ──────────────────────────────────────────────
