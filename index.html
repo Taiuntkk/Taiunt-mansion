@@ -5282,7 +5282,7 @@ function ReceiptModal({ invoice, onClose }) {
 }
 
 // ─── Repairs ────────────────────────────────────────────────────────────
-function AdminRepairs() {
+function AdminRepairs({ goto }) {
   const [tab, setTab] = React.useState('all');
   const [selected, setSelected] = React.useState(null);
   const [creating, setCreating] = React.useState(false);
@@ -5327,7 +5327,7 @@ function AdminRepairs() {
           </tbody>
         </table>
       </Card>
-      <RepairModal repair={selected} onClose={() => setSelected(null)} />
+      <RepairModal repair={selected} onClose={() => setSelected(null)} goto={goto} />
       <RepairCreateModal open={creating} onClose={() => setCreating(false)} />
     </div>
   );
@@ -5407,14 +5407,13 @@ function RepairCreateModal({ open, onClose }) {
   );
 }
 
-function RepairModal({ repair, onClose }) {
-  const { VENDORS } = window.TUMP_DATA;
+const REPAIR_CATEGORY_ASSET_KIND = { 'แอร์': 'ac', 'ไฟฟ้า': 'electric', 'ประปา': 'plumbing', 'อินเตอร์เน็ต': 'other', 'อื่นๆ': 'other' };
+
+function RepairModal({ repair, onClose, goto }) {
+  const { VENDORS, WORK_ORDERS } = window.TUMP_DATA;
   const activeVendors = VENDORS.filter(v => v.active);
   const [status, setStatus] = React.useState(null);
   const [assignee, setAssignee] = React.useState(null);
-  const [agreedCost, setAgreedCostState] = React.useState(null);
-  const [cost, setCostState] = React.useState(null);
-  const [paid, setPaid] = React.useState(false);
   const [completedAt, setCompletedAt] = React.useState(null);
   const [assigning, setAssigning] = React.useState(false);
   const [vendorId, setVendorId] = React.useState('');
@@ -5426,9 +5425,6 @@ function RepairModal({ repair, onClose }) {
   React.useEffect(() => {
     setStatus(repair?.status || null);
     setAssignee(repair?.assignee || null);
-    setAgreedCostState(repair?.agreedCost ?? null);
-    setCostState(repair?.cost ?? null);
-    setPaid(repair?.paid || false);
     setCompletedAt(repair?.completedAt || null);
     setAssigning(false);
     setVendorId('');
@@ -5440,22 +5436,33 @@ function RepairModal({ repair, onClose }) {
 
   if (!repair) return null;
 
+  // ใบสั่งจ้างซ่อมที่เชื่อมโยงกับเรื่องแจ้งซ่อมนี้ — แหล่งข้อมูลเดียวสำหรับช่าง/ราคา/การจ่ายเงิน ใช้ร่วมกับหน้า "จ้างซ่อม"
+  const linkedOrder = WORK_ORDERS.find(w => w.repairRef === repair.id) || null;
+
   const assignTech = () => {
     const vendor = activeVendors.find(v => v.id === vendorId);
     const agreed = Number(agreedCostInput);
     if (!vendor || !agreedCostInput || agreed < 0) return;
-    repair.vendorId = vendor.id;
+    const nextNum = Math.max(...WORK_ORDERS.map(w => Number(w.id.split('-')[2]))) + 1;
+    WORK_ORDERS.unshift({
+      id: `WO-2026-${String(nextNum).padStart(3, '0')}`,
+      kind: 'repair', title: `ซ่อม${repair.category} ห้อง ${repair.room}`,
+      location: 'room', room: repair.room, assetKind: REPAIR_CATEGORY_ASSET_KIND[repair.category] || 'other', assetName: repair.category,
+      symptom: repair.issue, vendor: `${vendor.firstName} ${vendor.lastName}`, vendorId: vendor.id,
+      dueDate: null, vendorResponse: 'accepted', vendorHistory: [],
+      startDate: '2026-05-26', endDate: null, status: 'in-progress',
+      cost: agreed, paid: false, warrantyMonths: 0, warrantyUntil: null,
+      repairRef: repair.id,
+    });
     repair.assignee = `${vendor.firstName} ${vendor.lastName}`;
-    repair.agreedCost = agreed;
     repair.status = 'in-progress';
     setAssignee(repair.assignee);
-    setAgreedCostState(repair.agreedCost);
     setStatus('in-progress');
     setAssigning(false);
   };
 
   const openClosing = () => {
-    setFinalCostInput(String(agreedCost ?? ''));
+    setFinalCostInput(String(linkedOrder?.cost ?? ''));
     setClosing(true);
   };
 
@@ -5463,12 +5470,14 @@ function RepairModal({ repair, onClose }) {
     const finalCost = Number(finalCostInput);
     if (!finalCostInput || finalCost < 0) return;
     repair.status = 'done';
-    repair.cost = finalCost;
-    repair.paid = true;
     repair.completedAt = '2026-05-26 12:00';
+    if (linkedOrder) {
+      linkedOrder.cost = finalCost;
+      linkedOrder.paid = true;
+      linkedOrder.status = 'done';
+      linkedOrder.endDate = '2026-05-26';
+    }
     setStatus('done');
-    setCostState(repair.cost);
-    setPaid(true);
     setCompletedAt(repair.completedAt);
     setClosing(false);
   };
@@ -5490,14 +5499,18 @@ function RepairModal({ repair, onClose }) {
         <KV label="หมวด" value={repair.category} />
         <KV label="วันที่แจ้ง" value={repair.date} />
         <KV label="ช่างผู้รับ" value={assignee || 'ยังไม่มอบหมาย'} />
-        {agreedCost != null && <KV label="ราคาตกลงเบื้องต้น" value={`฿${agreedCost.toLocaleString()}`} />}
-        {cost != null && <KV label="ค่าใช้จ่ายจริง" value={`฿${cost.toLocaleString()}`} />}
-        {status === 'done' && <KV label="สถานะการจ่ายเงิน" value={paid ? 'จ่ายช่างแล้ว' : 'ค้างจ่าย'} />}
+        {linkedOrder && <KV label="ราคาตกลงเบื้องต้น / ค่าใช้จ่ายจริง" value={`฿${linkedOrder.cost.toLocaleString()}`} />}
+        {status === 'done' && linkedOrder && <KV label="สถานะการจ่ายเงิน" value={linkedOrder.paid ? 'จ่ายช่างแล้ว' : 'ค้างจ่าย'} />}
         {completedAt && <KV label="ปิดงานเมื่อ" value={completedAt} />}
       </div>
+      {linkedOrder && (
+        <div style={{ marginTop: 12 }}>
+          <button className="tu-link" onClick={() => goto && goto('workorders')}>ดูใบสั่งจ้างซ่อม {linkedOrder.id} ในหน้าจ้างซ่อม →</button>
+        </div>
+      )}
       {assigning && (
         <div style={{ marginTop: 16, border: '1px solid var(--border)', borderRadius: 10, padding: 14 }}>
-          <div className="tu-muted" style={{ fontSize: 12, marginBottom: 8 }}>มอบหมายช่างผู้รับเรื่อง (จากทะเบียนช่าง)</div>
+          <div className="tu-muted" style={{ fontSize: 12, marginBottom: 8 }}>มอบหมายช่างผู้รับเรื่อง (จากทะเบียนช่าง) — จะออกใบสั่งจ้างซ่อมในหน้า "จ้างซ่อม" ให้อัตโนมัติ</div>
           <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
             <select className="tu-select" style={{ flex: 1 }} value={vendorId} onChange={(e) => setVendorId(e.target.value)}>
               <option value="">เลือกช่าง...</option>
@@ -5512,7 +5525,7 @@ function RepairModal({ repair, onClose }) {
       )}
       {closing && (
         <div style={{ marginTop: 16, border: '1px solid var(--border)', borderRadius: 10, padding: 14 }}>
-          <div className="tu-muted" style={{ fontSize: 12, marginBottom: 8 }}>ระบุค่าใช้จ่ายจริงเพื่อจ่ายเงินให้ช่าง (อาจต่างจากราคาตกลงเบื้องต้น)</div>
+          <div className="tu-muted" style={{ fontSize: 12, marginBottom: 8 }}>ระบุค่าใช้จ่ายจริงเพื่อจ่ายเงินให้ช่าง (อาจต่างจากราคาตกลงเบื้องต้น) — จะอัปเดตใบสั่งจ้างซ่อมที่เชื่อมโยงไว้ด้วย</div>
           <div style={{ display: 'flex', gap: 8 }}>
             <Input style={{ flex: 1 }} prefix="฿" type="number" value={finalCostInput} onChange={setFinalCostInput} placeholder="ค่าใช้จ่ายจริง" />
             <Button icon={I.check} onClick={closeJob} disabled={!finalCostInput}>ยืนยันจ่ายเงินและปิดงาน</Button>
@@ -8880,7 +8893,7 @@ function App() {
               {route === 'assets' && <AdminAssets />}
               {route === 'billing' && <AdminBilling />}
               {route === 'cashreport' && <AdminCashReport />}
-              {route === 'repairs' && <AdminRepairs />}
+              {route === 'repairs' && <AdminRepairs goto={goto} />}
               {route === 'stock' && <AdminStock />}
               {route === 'workorders' && <AdminWorkOrders goto={goto} />}
               {route === 'finance' && <AdminFinance />}
