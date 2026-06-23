@@ -5412,17 +5412,29 @@ function RepairModal({ repair, onClose }) {
   const activeVendors = VENDORS.filter(v => v.active);
   const [status, setStatus] = React.useState(null);
   const [assignee, setAssignee] = React.useState(null);
+  const [agreedCost, setAgreedCostState] = React.useState(null);
+  const [cost, setCostState] = React.useState(null);
+  const [paid, setPaid] = React.useState(false);
   const [completedAt, setCompletedAt] = React.useState(null);
   const [assigning, setAssigning] = React.useState(false);
   const [vendorId, setVendorId] = React.useState('');
+  const [agreedCostInput, setAgreedCostInput] = React.useState('');
+  const [closing, setClosing] = React.useState(false);
+  const [finalCostInput, setFinalCostInput] = React.useState('');
   const [note, setNote] = React.useState('');
 
   React.useEffect(() => {
     setStatus(repair?.status || null);
     setAssignee(repair?.assignee || null);
+    setAgreedCostState(repair?.agreedCost ?? null);
+    setCostState(repair?.cost ?? null);
+    setPaid(repair?.paid || false);
     setCompletedAt(repair?.completedAt || null);
     setAssigning(false);
     setVendorId('');
+    setAgreedCostInput('');
+    setClosing(false);
+    setFinalCostInput('');
     setNote('');
   }, [repair]);
 
@@ -5430,20 +5442,35 @@ function RepairModal({ repair, onClose }) {
 
   const assignTech = () => {
     const vendor = activeVendors.find(v => v.id === vendorId);
-    if (!vendor) return;
+    const agreed = Number(agreedCostInput);
+    if (!vendor || !agreedCostInput || agreed < 0) return;
     repair.vendorId = vendor.id;
     repair.assignee = `${vendor.firstName} ${vendor.lastName}`;
+    repair.agreedCost = agreed;
     repair.status = 'in-progress';
     setAssignee(repair.assignee);
+    setAgreedCostState(repair.agreedCost);
     setStatus('in-progress');
     setAssigning(false);
   };
 
+  const openClosing = () => {
+    setFinalCostInput(String(agreedCost ?? ''));
+    setClosing(true);
+  };
+
   const closeJob = () => {
+    const finalCost = Number(finalCostInput);
+    if (!finalCostInput || finalCost < 0) return;
     repair.status = 'done';
+    repair.cost = finalCost;
+    repair.paid = true;
     repair.completedAt = '2026-05-26 12:00';
     setStatus('done');
+    setCostState(repair.cost);
+    setPaid(true);
     setCompletedAt(repair.completedAt);
+    setClosing(false);
   };
 
   return (
@@ -5451,7 +5478,7 @@ function RepairModal({ repair, onClose }) {
       footer={<>
         <Button variant="secondary" onClick={onClose}>ปิด</Button>
         {status === 'pending' && <Button onClick={() => setAssigning(true)}>มอบหมายช่าง</Button>}
-        {status === 'in-progress' && <Button icon={I.check} onClick={closeJob}>ปิดงาน</Button>}
+        {status === 'in-progress' && <Button icon={I.check} onClick={openClosing}>ปิดงาน</Button>}
       </>}>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 16 }}>
         <Badge tone={RPR_STATUS[status || repair.status].tone} dot>{RPR_STATUS[status || repair.status].th}</Badge>
@@ -5463,17 +5490,32 @@ function RepairModal({ repair, onClose }) {
         <KV label="หมวด" value={repair.category} />
         <KV label="วันที่แจ้ง" value={repair.date} />
         <KV label="ช่างผู้รับ" value={assignee || 'ยังไม่มอบหมาย'} />
+        {agreedCost != null && <KV label="ราคาตกลงเบื้องต้น" value={`฿${agreedCost.toLocaleString()}`} />}
+        {cost != null && <KV label="ค่าใช้จ่ายจริง" value={`฿${cost.toLocaleString()}`} />}
+        {status === 'done' && <KV label="สถานะการจ่ายเงิน" value={paid ? 'จ่ายช่างแล้ว' : 'ค้างจ่าย'} />}
         {completedAt && <KV label="ปิดงานเมื่อ" value={completedAt} />}
       </div>
       {assigning && (
         <div style={{ marginTop: 16, border: '1px solid var(--border)', borderRadius: 10, padding: 14 }}>
           <div className="tu-muted" style={{ fontSize: 12, marginBottom: 8 }}>มอบหมายช่างผู้รับเรื่อง (จากทะเบียนช่าง)</div>
-          <div style={{ display: 'flex', gap: 8 }}>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 10 }}>
             <select className="tu-select" style={{ flex: 1 }} value={vendorId} onChange={(e) => setVendorId(e.target.value)}>
               <option value="">เลือกช่าง...</option>
               {activeVendors.map(v => <option key={v.id} value={v.id}>{v.firstName} {v.lastName} — {v.specialty}</option>)}
             </select>
-            <Button onClick={assignTech} disabled={!vendorId}>ยืนยัน</Button>
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Input style={{ flex: 1 }} prefix="฿" type="number" value={agreedCostInput} onChange={setAgreedCostInput} placeholder="ราคาตกลงเบื้องต้น เช่น 1200" />
+            <Button onClick={assignTech} disabled={!vendorId || !agreedCostInput}>ยืนยัน</Button>
+          </div>
+        </div>
+      )}
+      {closing && (
+        <div style={{ marginTop: 16, border: '1px solid var(--border)', borderRadius: 10, padding: 14 }}>
+          <div className="tu-muted" style={{ fontSize: 12, marginBottom: 8 }}>ระบุค่าใช้จ่ายจริงเพื่อจ่ายเงินให้ช่าง (อาจต่างจากราคาตกลงเบื้องต้น)</div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            <Input style={{ flex: 1 }} prefix="฿" type="number" value={finalCostInput} onChange={setFinalCostInput} placeholder="ค่าใช้จ่ายจริง" />
+            <Button icon={I.check} onClick={closeJob} disabled={!finalCostInput}>ยืนยันจ่ายเงินและปิดงาน</Button>
           </div>
         </div>
       )}
